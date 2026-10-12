@@ -23,7 +23,7 @@ package body CrcPkg is
          s := v(0);
          v := '0' & v(v'left downto 1);
          if ( s = '1' ) then
-            v := v xor POLY;
+            v := v xor std_logic_vector(resize(unsigned(POLY), v'length));
          end if;
       end loop;
       return v;
