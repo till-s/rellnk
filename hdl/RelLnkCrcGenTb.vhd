@@ -11,6 +11,20 @@ architecture rtl of RelLnkCrcGenTb is
    constant POLY_C           : std_logic_vector(14 downto 0) := "101100000110000";
    constant CRC_INIT_C       : std_logic_vector(14 downto 0) := (others => '1');
 
+   -- if XORing the guard bit and it's CRC results in a zero byte then
+   -- the encoder sets all CRC bits (and the guard bit).
+   -- E.g., if the last byte shall be zeroed by XOring (POLY<<1) & GUARD
+   -- then the left byte must match  (POLY<<1) while the right byte must
+   -- be zero (otherwise the guard will not be raised). The bad byte
+   -- sequence is thus [0x00, 0xb0] which is set to 0xff 0xff; this is
+   -- equivalent with XORing [0xff, 0x4f] and thus with XORing the original CRC
+   -- (which is 0) with the CRC of [0xff, 0x4f] (caveat: use initial state 0 for this,
+   -- since the original message XOR [0xff, 0x4f]  should be equal to the new message;
+   -- if the original message has the 0x7fff preamble we must omit from the correction.
+   constant MAGIC_C          : std_logic_vector(14 downto 0) := CrcBitWiseLE(POLY_C, x"4fff")(14 downto 0);
+
+   signal magic              : std_logic_vector(MAGIC_C'range) := MAGIC_C;
+
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
 
@@ -32,6 +46,9 @@ architecture rtl of RelLnkCrcGenTb is
    signal i                  : natural   := 1;
    signal j                  : natural   := 1;
 
+   -- iterating over ((i<<8) | j) for i,j 1..255 (to avoid EOF bytes)
+   -- scans *almost* all 2**15 CRC values (but a single one). This exercises
+   -- the CRC generator...
    signal feed   : Slv8Array(0 to 2) := (
       x"00",
       x"00",
@@ -87,7 +104,7 @@ begin
             if ( datOut = x"00" ) then
                if ( phase = 1 ) then
                   assert len    = 4 report "unexpected output length" severity failure;
-                  assert crcOut = (POLY_C xor POLY_C) or ((guard(0) = '1') and crcOut = (POLY_C xnor POLY_C)) report "unexpected CRC" severity failure;
+                  assert (crcOut = (POLY_C xor POLY_C)) or ((guard(0) = '1') and (crcOut = MAGIC_C)) report "unexpected CRC" severity failure;
                end if;
                len    <= 0;
                seen   <= seen + 1;
