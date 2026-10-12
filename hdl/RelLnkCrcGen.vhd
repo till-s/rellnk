@@ -3,6 +3,7 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 use     work.CrcPkg.all;
+use     work.RelLnkPkg.all;
 
 -- Append little-endian CRC to a COBS-encoded stream.
 -- (CRC is computed over the encoded stream in order
@@ -95,11 +96,12 @@ begin
                v.guard := '1';
                v.crc   := r.crc xor POLY_G;
                -- corner case where XORing the guard bit and its crc would
-               -- zero out the leftmost 8 bits. Mark this by asserting
-               -- all bits (both halves of the CRC AND the guard bits being
+               -- zero out the leftmost 8 bits. Mark this by using a magic
+               -- value with bits in both halves set.
+               -- (both halves of the CRC AND the guard bits being
                -- nonzero cannot happen otherwise).
                if ( r.crc(P_L_C'range) = P_L_C ) then
-                  v.crc := (others => '1');
+                  v.crc := r.crc xor POLY_G xor MAGIC_LE_C;
                end if;
             end if;
             v.state := APPEND_CRC_1;
