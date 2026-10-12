@@ -185,7 +185,8 @@ begin
 
    U_DUT_CHK : entity work.RelLnkCrcCheck
       generic map (
-         LD_FIFO_DEPTH_G => 2
+         LD_FIFO_DEPTH_G => 2,
+         COBS_CHECK_EN_G => false
       )
       port map (
          clk    => clk,
