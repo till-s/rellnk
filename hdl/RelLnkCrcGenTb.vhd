@@ -9,8 +9,6 @@ entity RelLnkCrcGenTb is
 end entity RelLnkCrcGenTb;
 
 architecture rtl of RelLnkCrcGenTb is
-   constant POLY_C           : std_logic_vector(14 downto 0) := CRC_POLY_LE_C;
-   constant CRC_INIT_C       : std_logic_vector(14 downto 0) := CRC_INIT_LE_C;
 
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
@@ -23,7 +21,10 @@ architecture rtl of RelLnkCrcGenTb is
    signal vldOut             : std_logic;
    signal rdyOut             : std_logic := '1';
 
-   signal crcOut             : std_logic_vector(POLY_C'range) := CRC_INIT_C;
+   signal datChk             : std_logic_vector(7 downto 0);
+   signal vldChk             : std_logic;
+
+   signal crcOut             : std_logic_vector(CRC_POLY_LE_C'range) := CRC_INIT_LE_C;
    signal guard              : std_logic_vector(1 downto 0);
 
    type Slv8Array is array (natural range <>) of std_logic_vector(7 downto 0);
@@ -57,6 +58,11 @@ architecture rtl of RelLnkCrcGenTb is
    signal phase: natural := 0;
    signal len  : natural := 0;
 
+   signal rxChecked : natural := 0;
+   signal rxIdx     : natural := 0;
+   signal rxCmp     : unsigned(15 downto 0) := to_unsigned(256*1 + 1, 16);
+   signal rxIJ      : unsigned(15 downto 0) := (others => '0');
+
    function NEOFS return natural is
       variable v : natural;
    begin
@@ -86,7 +92,7 @@ begin
             if ( phase = 1 ) then
                len    <= len + 1;
                guard  <= datOut(0) & guard(guard'left downto 1);
-               crcOut <= std_logic_vector(shift_right(unsigned(crcOut),8)) xor CrcBitWiseLE(POLY_C, (crcOut(7 downto 0) xor datOut ));
+               crcOut <= CrcWrdWiseLE(CRC_POLY_LE_C, crcOut, datOut);
            end if;
             if ( datOut = x"00" ) then
                if ( phase = 1 ) then
@@ -95,7 +101,7 @@ begin
                end if;
                len    <= 0;
                seen   <= seen + 1;
-               crcOut <= CRC_INIT_C;
+               crcOut <= CRC_INIT_LE_C;
             end if;
          end if;
          if ( phase = 0 and vldInp = '0' and idx = 0 ) then
@@ -111,10 +117,10 @@ begin
             elsif ( phase = 1 ) then
                if ( idx = feed'high ) then
                   if ( i = 255 ) then
-                     i <= 1;
                      if ( j = 255 ) then
                         vldInp <= '0';
                      else
+                        i <= 1;
                         j <= j + 1;
                      end if;
                   else
@@ -131,22 +137,41 @@ begin
            idx    <= 0;
            vldInp <= '1';
          end if;
-         if ( seen = NEOFS + 255*255 ) then
-            don <= true;
+         if ( vldChk = '1' ) then
+            if ( rxChecked = FEED_C'length + 255*255*feed'length - 1 ) then
+               assert ( seen = NEOFS + 255*255 ) severity failure;
+               don <= true;
+               report "TEST PASSED";
+            else
+               rxChecked <= rxChecked + 1;
+               if ( rxIdx < FEED_C'length ) then
+                  assert ( datChk = FEED_C(rxIdx) ) severity failure;
+                  rxIdx <= rxIdx + 1;
+               else
+                  if ( datChk = x"00" ) then
+                     assert rxCmp = rxIJ severity failure;
+                     rxIJ  <= (others => '0');
+                     if ( rxCmp(7 downto 0) = 255 ) then
+                        rxCmp <= rxCmp + 2;
+                     else
+                        rxCmp <= rxCmp + 1;
+                     end if;
+                  else
+                     rxIJ <= shift_left(rxIJ, 8) or resize(unsigned(datChk), rxIJ'length);
+                  end if;
+               end if;
+            end if;
          end if;
       end if;
    end process P_FEED;
 
-   feed(0) <= std_logic_vector(to_unsigned(i, 8));
-   feed(1) <= std_logic_vector(to_unsigned(j, 8));
+   feed(0) <= std_logic_vector(to_unsigned(j, 8));
+   feed(1) <= std_logic_vector(to_unsigned(i, 8));
    feed(2) <= x"00";
 
    datInp <= FEED_C(idx) when phase = 0 else feed(idx);
 
-   U_DUT : entity work.RelLnkCrcGen
-      generic map (
-         POLY_G => POLY_C
-      )
+   U_DUT_GEN : entity work.RelLnkCrcGen
       port map (
          clk    => clk,
          rst    => rst,
@@ -157,6 +182,23 @@ begin
          vldOut => vldOut,
          rdyOut => rdyOut
       );
+
+   U_DUT_CHK : entity work.RelLnkCrcCheck
+      generic map (
+         LD_FIFO_DEPTH_G => 2
+      )
+      port map (
+         clk    => clk,
+         rst    => rst,
+         datInp => datOut,
+         vldInp => vldOut,
+         rdyInp => open,
+
+         datOut => datChk,
+         vldOut => vldChk,
+         rdyOut => '1'
+      );
+
 
 end architecture rtl;
 

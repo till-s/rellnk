@@ -5,6 +5,8 @@ use     ieee.numeric_std.all;
 package CrcPkg is
    function CrcBitWiseLE(constant POLY: in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector;
 
+   function CrcWrdWiseLE(constant POLY: in std_logic_vector; constant crc : in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector;
+
    function CrcBitWiseBE(constant POLY: in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector;
 end package CrcPkg;
 
@@ -28,6 +30,11 @@ package body CrcPkg is
       end loop;
       return v;
    end function CrcBitWiseLE;
+
+   function CrcWrdWiseLE(constant POLY: in std_logic_vector; constant crc : in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector is
+   begin
+      return std_logic_vector(shift_right(unsigned(crc), data'length)) xor CrcBitWiseLE(POLY, crc(data'range) xor data);
+   end function CrcWrdWiseLE;
 
    function CrcBitWiseBE(constant POLY: in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector is
       variable v : std_logic_vector(max_loc(POLY'length, data'length) - 1 downto 0);

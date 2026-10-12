@@ -13,7 +13,7 @@ use     work.RelLnkPkg.all;
 
 entity RelLnkCrcGen is
    generic (
-      POLY_G         : std_logic_vector(14 downto 0)
+      COBS_EOF_G     : std_logic_vector(7 downto 0) := x"00"
    );
    port (
       clk            : in  std_logic;
@@ -30,33 +30,24 @@ end entity RelLnkCrcGen;
 
 architecture rtl of RelLnkCrcGen is
 
-   constant EOF_C      : std_logic_vector(7 downto 0)   := x"00"; 
-   constant CRC_INIT_C : std_logic_vector(POLY_G'range) := (others => '1');
-
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms
-   constant P_L_C      : std_logic_vector(14 downto 7) := POLY_G(14 downto 7);
+   constant P_L_C      : std_logic_vector(14 downto 7) := CRC_POLY_LE_C(14 downto 7);
    -- 'right' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'higher' order terms
-   constant P_R_C      : std_logic_vector( 6 downto 0) := POLY_G( 6 downto 0 );
+   constant P_R_C      : std_logic_vector( 6 downto 0) := CRC_POLY_LE_C( 6 downto 0 );
 
    type StateType is (RUN, FIX_CRC, APPEND_CRC_1, APPEND_CRC_2, APPEND_EOF);
 
-   function shift_right(constant x : std_logic_vector; constant s : natural)
-   return std_logic_vector is
-   begin
-      return std_logic_vector(shift_right(unsigned(x),s));
-   end function shift_right;
-
    type RegType   is record
       state       : StateType;
-      crc         : std_logic_vector(POLY_G'range);
+      crc         : std_logic_vector(CRC_POLY_LE_C'range);
       guard       : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
       state       => RUN,
-      crc         => CRC_INIT_C,
+      crc         => CRC_INIT_LE_C,
       guard       => '0'
    );
 
@@ -66,7 +57,8 @@ architecture rtl of RelLnkCrcGen is
 begin
 
    P_COMB : process (r, datInp, vldInp, rdyOut) is
-      variable v : RegType;
+      variable v          : RegType;
+      constant BIT_ZERO_C : std_logic_vector(0 downto 0) := "0";
    begin
       v          := r;
       datOut     <= datInp;
@@ -75,13 +67,13 @@ begin
       case ( r.state ) is
          when RUN        =>
             if ( ( vldInp and rdyOut ) = '1' ) then
-               v.crc := shift_right(r.crc, 8) xor CrcBitWiseLE(POLY_G, r.crc(7 downto 0) xor datInp);
-               if ( EOF_C = datInp ) then
+               v.crc := CrcWrdWiseLE(CRC_POLY_LE_C, r.crc, datInp);
+               if ( COBS_EOF_G = datInp ) then
                   -- stop output (but consume input)
                   vldOut  <= '0';
                   v.state := FIX_CRC;
                   -- EOF does not go into CRC but add the guard bit ('0' for now)
-                  v.crc   := shift_right(r.crc, 1) xor CrcBitWiseLE(POLY_G, r.crc(0 downto 0) xor "0");
+                  v.crc   := CrcWrdWiseLE(CRC_POLY_LE_C, r.crc, BIT_ZERO_C);
                end if;
             end if;
 
@@ -89,19 +81,19 @@ begin
             rdyInp <= '0'; -- stop input
             vldOut <= '0'; -- stop output
             -- massage the guard bit
-            if    ( r.crc(P_L_C'range) = EOF_C ) then
+            if    ( r.crc(P_L_C'range) = COBS_EOF_G ) then
                v.guard := '1';
-               v.crc   := r.crc xor POLY_G;
+               v.crc   := r.crc xor CRC_POLY_LE_C;
             elsif ( r.crc(P_R_C'range) = (P_R_C xor P_R_C) ) then -- (X xor X) for zero
                v.guard := '1';
-               v.crc   := r.crc xor POLY_G;
+               v.crc   := r.crc xor CRC_POLY_LE_C;
                -- corner case where XORing the guard bit and its crc would
                -- zero out the leftmost 8 bits. Mark this by using a magic
                -- value with bits in both halves set.
                -- (both halves of the CRC AND the guard bits being
                -- nonzero cannot happen otherwise).
                if ( r.crc(P_L_C'range) = P_L_C ) then
-                  v.crc := r.crc xor POLY_G xor MAGIC_LE_C;
+                  v.crc := r.crc xor CRC_POLY_LE_C xor MAGIC_LE_C;
                end if;
             end if;
             v.state := APPEND_CRC_1;
@@ -125,8 +117,8 @@ begin
          when APPEND_EOF   =>
             rdyInp  <= '0'; -- stop input
             vldOut  <= '1';
-            datOut  <= EOF_C;
-            v.crc   := CRC_INIT_C;
+            datOut  <= COBS_EOF_G;
+            v.crc   := CRC_INIT_LE_C;
             v.guard := '0';
             if ( rdyOut = '1' ) then
                v.state := RUN;
