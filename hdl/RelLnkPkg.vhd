@@ -115,6 +115,28 @@ package RelLnkPkg is
    function CRC_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_BE_C'range))
    return boolean;
 
+   subtype RelLnkSeqNo  is unsigned(1 downto 0);
+   subtype RelLnkMsgTyp is unsigned(1 downto 0);
+
+   subtype RelLnkTimeoutType is unsigned(15 downto 0);
+
+   constant REL_LNK_WINSZ_C   : RelLnkSeqNo  := to_unsigned(3, RelLnkSeqNo'length);
+
+   constant REL_LNK_MSG_DAT_C : RelLnkMsgTyp := to_unsigned(0, RelLnkMsgTyp'length);
+   constant REL_LNK_MSG_ACK_C : RelLnkMsgTyp := to_unsigned(1, RelLnkMsgTyp'length);
+
+   function mkHdr1(constant req : RelLnkSeqNo; constant ack : RelLnkSeqNo; constant typ : RelLnkMsgTyp)
+   return std_logic_vector;
+
+   function hdrGetReq(constant x : std_logic_vector(7 downto 0))
+   return RelLnkSeqNo;
+
+   function hdrGetAck(constant x : std_logic_vector(7 downto 0))
+   return RelLnkSeqNo;
+
+   function hdrGetMsgTyp(constant x : std_logic_vector(7 downto 0))
+   return RelLnkMsgTyp;
+
 end package RelLnkPkg;
 
 package body RelLnkPkg is
@@ -130,6 +152,37 @@ package body RelLnkPkg is
    begin
       return ((not crc(0) or g) = '1') and (unsigned(crc(crc'left downto 1)) = 0);
    end function CRC_OK_BE_F;
+
+   function mkHdr1(constant req : RelLnkSeqNo; constant ack : RelLnkSeqNo; constant typ : RelLnkMsgTyp)
+   return std_logic_vector is
+   begin
+      return std_logic_vector(resize(req & ack & typ, 8));
+   end function mkHdr1;
+
+   function hdrGetReq(constant x : std_logic_vector(7 downto 0))
+   return RelLnkSeqNo is
+      variable v : unsigned(x'range);
+   begin
+      v := shift_right(unsigned(x),  RelLnkSeqNo'length + RelLnkMsgTyp'length);
+      return RelLnkSeqNo(resize(v, RelLnkSeqNo'length));
+   end function hdrGetReq;
+
+   function hdrGetAck(constant x : std_logic_vector(7 downto 0))
+   return RelLnkSeqNo is
+      variable v : unsigned(x'range);
+   begin
+      v := shift_right(unsigned(x),  RelLnkMsgTyp'length);
+      return RelLnkSeqNo(resize(v, RelLnkSeqNo'length));
+   end function hdrGetAck;
+
+   function hdrGetMsgTyp(constant x : std_logic_vector(7 downto 0))
+   return RelLnkMsgTyp is
+      variable v : unsigned(x'range);
+   begin
+      v := shift_right(unsigned(x),  0);
+      return RelLnkMsgTyp(resize(v, RelLnkMsgTyp'length));
+   end function hdrGetMsgTyp;
+
 
 end package body RelLnkPkg;
 

@@ -66,6 +66,7 @@ architecture rtl of RelLnkCrcCheck is
    signal   fifoRdEna   : std_logic;
    signal   fifoWrUndo  : std_logic;
    signal   fifoWrPtr   : signed(LD_FIFO_DEPTH_G downto 0);
+   signal   fifoRdPtr   : signed(LD_FIFO_DEPTH_G downto 0);
 
    type     StateType   is (RUN, DROP);
    type     Slv9Array   is array (natural range <>) of std_logic_vector(8 downto 0);
@@ -260,7 +261,8 @@ begin
          
          datOut          => datOut,
          rdEna           => fifoRdEna,
-         rdPtr           => open,
+         rdPtr           => fifoRdPtr,
+	 hlPtr           => fifoRdPtr,
          empty           => fifoEmpty
       );
 

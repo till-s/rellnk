@@ -46,6 +46,13 @@ entity RelLnkFifo is
       wrPtr           : out signed(LD_FIFO_DEPTH_G downto 0);
       -- 'commit' pointer read possible up to here
       cmPtr           : in  signed(LD_FIFO_DEPTH_G downto 0);
+
+      -- reset read pointer to hold pointer; if 'rdUndo' is asserted
+      -- concurrently with 'rdEna' the data at the previous read
+      -- pointer (before reset to hlPtr) is read.
+      rdUndo          : in  std_logic := '0';
+      -- 'hold' pointer; write possible up to here
+      hlPtr           : in  signed(LD_FIFO_DEPTH_G downto 0);
       
       datOut          : out std_logic_vector(DATA_WIDTH_G - 1 downto 0);
       rdEna           : in  std_logic;
@@ -98,7 +105,7 @@ begin
 
    -- since wptr and rptr are signed and 1-bit longer than LD_FIFO_DEPTH_G
    -- the wptr-rptr difference flips negative when the fifo is full
-   fullLoc <= '1' when ( wptr - rptr < 0 ) else '0';
+   fullLoc <= '1' when ( wptr - hlPtr < 0 ) else '0';
 
    P_FIFO_RD : process ( clk ) is
    begin
@@ -121,6 +128,10 @@ begin
             end if;
             if ( wrUndo    = '1' ) then
                wptr <= cmPtr;
+            end if;
+            if ( rdUndo    = '1' ) then
+               rptr        <= hlPtr;
+               readDataVld <= '0';
             end if;
          end if;
       end if;

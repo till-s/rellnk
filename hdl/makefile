@@ -1,7 +1,7 @@
 
 GHDL=ghdl
 
-PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb
+PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb
 
 all: $(PROGS)
 
@@ -20,3 +20,7 @@ RelLnkCrcGenTb.o: RelLnkPkg.o RelLnkCrcCheck.o RelLnkCrcGen.o
 RelLnkCrcCheck.o: RelLnkPkg.o CrcPkg.o RelLnkFifo.o
 
 RelLnkCrcGen.o: RelLnkPkg.o CrcPkg.o
+
+RelLnk.o: RelLnkPkg.o RelLnkFifo.o
+
+RelLnkTb.o: RelLnkPkg.o RelLnk.o
