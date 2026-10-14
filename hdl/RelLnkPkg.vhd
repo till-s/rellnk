@@ -115,7 +115,7 @@ package RelLnkPkg is
    function CRC_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_BE_C'range))
    return boolean;
 
-   subtype RelLnkSeqNo  is unsigned(1 downto 0);
+   subtype RelLnkSeqNo  is unsigned(2 downto 0);
    subtype RelLnkMsgTyp is unsigned(1 downto 0);
 
    subtype RelLnkTimeoutType is unsigned(15 downto 0);
@@ -182,7 +182,6 @@ package body RelLnkPkg is
       v := shift_right(unsigned(x),  0);
       return RelLnkMsgTyp(resize(v, RelLnkMsgTyp'length));
    end function hdrGetMsgTyp;
-
 
 end package body RelLnkPkg;
 

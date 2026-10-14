@@ -1,5 +1,6 @@
 
 GHDL=ghdl
+GHDLFLAGS=-fsynopsys
 
 PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb
 
