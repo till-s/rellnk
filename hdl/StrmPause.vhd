@@ -64,14 +64,12 @@ architecture rtl of StrmPause is
 
    type     RegType   is record
       state             : StateType;
-      vldOut            : std_logic;
       pass              : unsigned(pass'range);
       pause             : unsigned(pause'range);
    end record RegType;
 
    constant REG_INIT_C : RegType := (
       state             => IDLE,
-      vldOut            => '0',
       pass              => (others => '0'),
       pause             => (others => '0')
    );
@@ -103,18 +101,17 @@ begin
             if ( trg = '1' ) then
                if ( pass = 0 ) then
                   v.state  := STALL;
-                  -- if vldInp is already asserted we must not deassert;
-                  -- remember the current state
-                  v.vldOut := vldInp;
                   if ( vldInp = '1' ) then
                      if ( rdyOut = '1' ) then
                         if ( pause = 0 ) then
                            pauseAck <= '1';
                            -- no change of state
                            v.state := r.state;
-                        else
-                           v.vldOut := '0';
                         end if;
+                     else
+                        -- if vldInp is already asserted we must not deassert;
+                        -- wait in 'PASSING' state;
+                        v.state := PASSING;
                      end if;
                   end if;
                else
@@ -125,16 +122,22 @@ begin
          when PASSING =>
             if ( (vldInp and rdyOut) = '1' ) then
                if ( r.pass = 0 ) then
-                  v.state  := STALL;
-                  v.vldOut := '0'; -- may withdraw vldOut since this cycle ends here
+                  if ( r.pause = 0 ) then
+                     v.state  := IDLE;
+                     pauseAck <= '1';
+                  else
+                     v.state  := STALL;
+                  end if;
                else
                   v.pass  := r.pass - 1; 
                end if;
             end if;
 
+         -- enter this state only when vldInp can be deasserted,
+         -- i.e., when previously either vldInp = 0 or vldInp and rdyInp = 1
          when STALL =>
             rdyInp <= '0';
-            vldOut <= r.vldOut;
+            vldOut <= '0';
             if ( r.pause = 0 ) then
                vldOut <= vldInp;
                rdyInp <= rdyOut;

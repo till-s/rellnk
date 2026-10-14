@@ -2,7 +2,7 @@
 GHDL=ghdl
 GHDLFLAGS=-fsynopsys
 
-PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb
+PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb RelLnkRndTb
 
 all: $(PROGS)
 
@@ -24,4 +24,5 @@ RelLnkCrcGen.o: RelLnkPkg.o CrcPkg.o
 
 RelLnk.o: RelLnkPkg.o RelLnkFifo.o
 
-RelLnkTb.o: RelLnkPkg.o RelLnk.o
+RelLnkTb.o: RelLnkPkg.o RelLnk.o RelLnkFifo.o
+RelLnkRndTb.o: RelLnkPkg.o RelLnk.o StrmPause.o

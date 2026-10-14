@@ -327,16 +327,113 @@ begin
 
    end block B_PAUSE_B2A;
 
+   B_PAUSE_INP : block is
+      constant LD_PAUSE_C : natural := 3;
+      signal trg  : std_logic := '1';
+      signal ack  : std_logic;
+      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
+      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
+   begin
 
-   datInpO <= datInpI;
-   vldInpO <= vldInpI;
-   lstInpO <= lstInpI;
-   rdyInpO <= rdyInpI;
+   P_RND : process ( clk ) is
+      variable s1 : positive := 7869;
+      variable s2 : positive := 555555;
+      variable  u : unsigned(pass'range);
+   begin
+      if ( rising_edge( clk ) ) then
+         trg <= '0';
+         if ( ack = '1' ) then
+            rnd(s1,s2,u);
+            pass <= u;
+            rnd(s1,s2,u);
+            paus <= u;
+            trg  <= '1';
+         end if;
+      end if;
+   end process P_RND;
 
-   datOutO <= datOutI;
-   vldOutO <= vldOutI;
-   lstOutO <= lstOutI;
-   rdyOutO <= rdyOutI;
+   U_PAUSE_INP : entity work.StrmPause
+      generic map (
+         LD_PAUSE_G      => pass'length,
+         DATA_WIDTH_G    => 8
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         trg             => trg,
+         -- let 'pass' transactions go undisturbed before the pause is enforced
+         pass            => pass,
+         pause           => paus,
+         -- asserted for the VLD/RDY cycle when the pause expired
+         pauseAck        => ack,
+
+         datInp          => datInpI,
+         vldInp          => vldInpI,
+         lstInp          => lstInpI,
+         rdyInp          => rdyInpO,
+
+         datOut          => datInpO,
+         vldOut          => vldInpO,
+         lstOut          => lstInpO,
+         rdyOut          => rdyInpI
+      );
+
+   end block B_PAUSE_INP;
+
+   B_PAUSE_OUT : block is
+      constant LD_PAUSE_C : natural := 3;
+      signal trg  : std_logic := '1';
+      signal ack  : std_logic;
+      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
+      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
+   begin
+
+   P_RND : process ( clk ) is
+      variable s1 : positive := 4109;
+      variable s2 : positive := 111986;
+      variable  u : unsigned(pass'range);
+   begin
+      if ( rising_edge( clk ) ) then
+         trg <= '0';
+         if ( ack = '1' ) then
+            rnd(s1,s2,u);
+            pass <= u;
+            rnd(s1,s2,u);
+            paus <= u;
+            trg  <= '1';
+         end if;
+      end if;
+   end process P_RND;
+
+   U_PAUSE_OUT : entity work.StrmPause
+      generic map (
+         LD_PAUSE_G      => pass'length,
+         DATA_WIDTH_G    => 8
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         trg             => trg,
+         -- let 'pass' transactions go undisturbed before the pause is enforced
+         pass            => pass,
+         pause           => paus,
+         -- asserted for the VLD/RDY cycle when the pause expired
+         pauseAck        => ack,
+
+         datInp          => datOutI,
+         vldInp          => vldOutI,
+         lstInp          => lstOutI,
+         rdyInp          => rdyOutO,
+
+         datOut          => datOutO,
+         vldOut          => vldOutO,
+         lstOut          => lstOutO,
+         rdyOut          => rdyOutI
+      );
+
+   end block B_PAUSE_OUT;
 
 end architecture rtl;
 

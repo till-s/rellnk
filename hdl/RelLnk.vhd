@@ -150,14 +150,15 @@ begin
 
    P_COMB : process (
       r,
-      datInpTx, vldInpTx, rdyOutTx,
-      datInpRx, vldInpRx, rdyOutRx,
+      datInpTx, vldInpTx, lstInpTx,
+      rdyOutTx,
+      datInpRx, vldInpRx, lstInpRx,
+      rdyOutRx,
       fifoFull, fifoWrPtr, fifoEmpty, fifoRdPtr, fifoRdDat,
       rexFifoEmpty, rexFifoRdDat, rexFifoWrPtr
    ) is
       variable v         : RegType;
       variable txDat     : std_logic_vector(7 downto 0);
-      variable rexAbort  : boolean;
    begin
       v            :=  r;
       fifoWrUndo   <= '0';
@@ -173,7 +174,6 @@ begin
       vldOutRx     <= '0';
       lstOutRx     <= '0';
       txDat        := datInpTx;
-      rexAbort     := false;
       rexFifoWrDat <= std_logic_vector(fifoWrPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
       rexFifoWrUndo<= '0';
       datOutRx     <= datInpRx;
@@ -188,9 +188,7 @@ begin
                if ( hdrGetAck(datInpRx) - r.txAck <= r.txReq - r.txAck ) then
                   -- normal case; ack is in the retransmission queue
                   v.txAckDly := hdrGetAck(datInpRx);
-                  if ( FAST_ACK_G ) then
-                     v.txAck    := hdrGetAck(datInpRx);
-                  end if;
+                  v.txAck    := hdrGetAck(datInpRx);
                else
                   -- a redundant ack; ignore
                end if;
@@ -203,7 +201,12 @@ begin
                else
                   if ( hdrGetReq(datInpRx) = r.rxReq + 1 ) then
                      -- new in-order request; 
-                     v.rxReq   := r.rxReq + 1;
+                     if ( FAST_ACK_G ) then
+                        v.rxReq   := r.rxReq + 1;
+                     else
+                        -- reset and use delayed version
+                        v.txAck   := r.txAck;
+                     end if;
                      v.rxState := STRIP_HDR;
                   else
                      -- they might not have not seen rxReq; ensure we send an ACK
@@ -237,6 +240,7 @@ begin
             if ( (vldInpRx and lstInpRx and rdyOutRx) = '1' ) then
                if ( not FAST_ACK_G ) then
                   v.txAck    := r.txAckDly;
+                  v.rxReq    := r.rxReq + 1;
                end if;
                v.rxState := IDLE;
             end if;
