@@ -120,8 +120,6 @@ package RelLnkPkg is
 
    subtype RelLnkTimeoutType is unsigned(15 downto 0);
 
-   constant REL_LNK_WINSZ_C   : RelLnkSeqNo  := to_unsigned(3, RelLnkSeqNo'length);
-
    constant REL_LNK_MSG_DAT_C : RelLnkMsgTyp := to_unsigned(0, RelLnkMsgTyp'length);
    constant REL_LNK_MSG_ACK_C : RelLnkMsgTyp := to_unsigned(1, RelLnkMsgTyp'length);
 

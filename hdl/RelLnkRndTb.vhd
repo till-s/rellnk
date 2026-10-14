@@ -14,6 +14,17 @@ architecture rtl of RelLnkRndTb is
    constant LD_PLD_SIZE_C    : natural   := 3;
    constant LD_FIFO_DEPTH_C  : natural   := LD_PLD_SIZE_C + 3; -- (pld + hdr)*winsz
 
+   function ite(constant c : boolean; constant t,f : integer) return integer is
+   begin
+      if ( c ) then return t; else return f; end if;
+   end function ite;
+
+   constant FIXED_STALL_C    : integer   := 10;
+   constant FIXED_STALL_B2A_C: integer   := 8*FIXED_STALL_C;
+   constant TIMEOUT_C        : natural   := 2**LD_PLD_SIZE_C * 5 * ite(FIXED_STALL_C > 0, FIXED_STALL_C, 1);
+   constant WINSZ_C          : positive  := 3;
+   constant LD_PAUSE_C       : natural   := 16;
+
    constant PKT_SEED_1_C     : positive  := 237;
    constant PKT_SEED_2_C     : positive  := 7239;
 
@@ -164,8 +175,9 @@ begin
    U_PING : entity work.RelLnk
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
-         REX_TIMEOUT_G   => to_unsigned(50, RelLnkTimeoutType'length),
-         FAST_ACK_G      => false
+         REX_TIMEOUT_G   => to_unsigned(TIMEOUT_C, RelLnkTimeoutType'length),
+         FAST_ACK_G      => false,
+         REL_LNK_WINSZ_G => WINSZ_C
       )
       port map (
          clk      => clk,
@@ -193,8 +205,9 @@ begin
    U_PONG : entity work.RelLnk
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
-         REX_TIMEOUT_G   => to_unsigned(50, RelLnkTimeoutType'length),
-         FAST_ACK_G      => false
+         REX_TIMEOUT_G   => to_unsigned(TIMEOUT_C, RelLnkTimeoutType'length),
+         FAST_ACK_G      => false,
+         REL_LNK_WINSZ_G => WINSZ_C
       )
       port map (
          clk      => clk,
@@ -220,29 +233,40 @@ begin
       );
 
    B_PAUSE_A2B : block is
-      constant LD_PAUSE_C : natural := 3;
       signal trg  : std_logic := '1';
       signal ack  : std_logic;
       signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
       signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
    begin
 
-   P_RND : process ( clk ) is
-      variable s1 : positive := 87;
-      variable s2 : positive := 777777;
-      variable  u : unsigned(pass'range);
+   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
    begin
-      if ( rising_edge( clk ) ) then
-         trg <= '0';
-         if ( ack = '1' ) then
-            rnd(s1,s2,u);
-            pass <= u;
-            rnd(s1,s2,u);
-            paus <= u;
-            trg  <= '1';
+
+      P_RND : process ( clk ) is
+         variable s1 : positive := 87;
+         variable s2 : positive := 777777;
+         variable  u : unsigned(pass'range);
+      begin
+         if ( rising_edge( clk ) ) then
+            trg <= '0';
+            if ( ack = '1' ) then
+               rnd(s1,s2,u);
+               pass <= u;
+               rnd(s1,s2,u);
+               paus <= u;
+               trg  <= '1';
+            end if;
          end if;
-      end if;
-   end process P_RND;
+      end process P_RND;
+    
+   end generate G_RND_STALL;
+
+   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
+   begin
+      trg  <= '1';
+      pass <= (others => '0');
+      paus <= to_unsigned(FIXED_STALL_C, paus'length);
+   end generate G_FIXED_STALL;
 
    U_PAUSE_A2B : entity work.StrmPause
       generic map (
@@ -274,29 +298,40 @@ begin
    end block B_PAUSE_A2B;
 
    B_PAUSE_B2A : block is
-      constant LD_PAUSE_C : natural := 3;
       signal trg  : std_logic := '1';
       signal ack  : std_logic;
       signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
       signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
    begin
 
-   P_RND : process ( clk ) is
-      variable s1 : positive := 99;
-      variable s2 : positive := 888777;
-      variable  u : unsigned(pass'range);
+   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
    begin
-      if ( rising_edge( clk ) ) then
-         trg <= '0';
-         if ( ack = '1' ) then
-            rnd(s1,s2,u);
-            pass <= u;
-            rnd(s1,s2,u);
-            paus <= u;
-            trg  <= '1';
+
+      P_RND : process ( clk ) is
+         variable s1 : positive := 99;
+         variable s2 : positive := 888777;
+         variable  u : unsigned(pass'range);
+      begin
+         if ( rising_edge( clk ) ) then
+            trg <= '0';
+            if ( ack = '1' ) then
+               rnd(s1,s2,u);
+               pass <= u;
+               rnd(s1,s2,u);
+               paus <= u;
+               trg  <= '1';
+            end if;
          end if;
-      end if;
-   end process P_RND;
+      end process P_RND;
+    
+   end generate G_RND_STALL;
+
+   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
+   begin
+      trg  <= '1';
+      pass <= (others => '0');
+      paus <= to_unsigned(FIXED_STALL_B2A_C, paus'length);
+   end generate G_FIXED_STALL;
 
    U_PAUSE_B2A : entity work.StrmPause
       generic map (
@@ -328,29 +363,39 @@ begin
    end block B_PAUSE_B2A;
 
    B_PAUSE_INP : block is
-      constant LD_PAUSE_C : natural := 3;
       signal trg  : std_logic := '1';
       signal ack  : std_logic;
       signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
       signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
    begin
 
-   P_RND : process ( clk ) is
-      variable s1 : positive := 7869;
-      variable s2 : positive := 555555;
-      variable  u : unsigned(pass'range);
+   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
    begin
-      if ( rising_edge( clk ) ) then
-         trg <= '0';
-         if ( ack = '1' ) then
-            rnd(s1,s2,u);
-            pass <= u;
-            rnd(s1,s2,u);
-            paus <= u;
-            trg  <= '1';
+      P_RND : process ( clk ) is
+         variable s1 : positive := 7869;
+         variable s2 : positive := 555555;
+         variable  u : unsigned(pass'range);
+      begin
+         if ( rising_edge( clk ) ) then
+            trg <= '0';
+            if ( ack = '1' ) then
+               rnd(s1,s2,u);
+               pass <= u;
+               rnd(s1,s2,u);
+               paus <= u;
+               trg  <= '1';
+            end if;
          end if;
-      end if;
-   end process P_RND;
+      end process P_RND;
+   end generate G_RND_STALL;
+
+   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
+   begin
+      trg  <= '1';
+      pass <= (others => '0');
+      paus <= (others => '0');
+   end generate G_FIXED_STALL;
+
 
    U_PAUSE_INP : entity work.StrmPause
       generic map (
@@ -382,29 +427,40 @@ begin
    end block B_PAUSE_INP;
 
    B_PAUSE_OUT : block is
-      constant LD_PAUSE_C : natural := 3;
       signal trg  : std_logic := '1';
       signal ack  : std_logic;
       signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
       signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
    begin
 
-   P_RND : process ( clk ) is
-      variable s1 : positive := 4109;
-      variable s2 : positive := 111986;
-      variable  u : unsigned(pass'range);
+   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
    begin
-      if ( rising_edge( clk ) ) then
-         trg <= '0';
-         if ( ack = '1' ) then
-            rnd(s1,s2,u);
-            pass <= u;
-            rnd(s1,s2,u);
-            paus <= u;
-            trg  <= '1';
+      P_RND : process ( clk ) is
+         variable s1 : positive := 4109;
+         variable s2 : positive := 111986;
+         variable  u : unsigned(pass'range);
+      begin
+         if ( rising_edge( clk ) ) then
+            trg <= '0';
+            if ( ack = '1' ) then
+               rnd(s1,s2,u);
+               pass <= u;
+               rnd(s1,s2,u);
+               paus <= u;
+               trg  <= '1';
+            end if;
          end if;
-      end if;
-   end process P_RND;
+      end process P_RND;
+   end generate G_RND_STALL;
+
+   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
+   begin
+      trg  <= '1';
+      pass <= (others => '0');
+      paus <= (others => '0');
+   end generate G_FIXED_STALL;
+
+
 
    U_PAUSE_OUT : entity work.StrmPause
       generic map (

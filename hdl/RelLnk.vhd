@@ -40,7 +40,8 @@ entity RelLnk is
       -- packet has been received!) but is more responsive
       -- if there are store-and forward elements downstream
       -- (e.g., CRC checking).
-      FAST_ACK_G      : boolean
+      FAST_ACK_G      : boolean;
+      REL_LNK_WINSZ_G : positive range 1 to (2**RelLnkSeqNo'length - 1) := 3
    );
    port (
       clk             : in  std_logic;
@@ -50,10 +51,15 @@ entity RelLnk is
       vldInpTx        : in  std_logic;
       lstInpTx        : in  std_logic;
       rdyInpTx        : out std_logic;
+
+      oobInpTx        : in  std_logic_vector(7 downto 0) := (others => '0');
+
       datOutRx        : out std_logic_vector(7 downto 0);
       vldOutRx        : out std_logic;
       lstOutRx        : out std_logic;
       rdyOutRx        : in  std_logic;
+
+      oobOutRx        : out std_logic_vector(7 downto 0);
 
       datOutTx        : out std_logic_vector(7 downto 0);
       vldOutTx        : out std_logic;
@@ -94,8 +100,8 @@ architecture rtl of RelLnk is
    signal   rexFifoCmPtr : signed(LD_REX_FIFO_DEPTH_C downto 0);
 
 
-   type     TxStateType is (IDLE, TX_ACK, TX_HDR, TX_PLD, REX_HDR, REX_PLD, REX_CLEAN, REX_RST_RPTR, REX_ABORT, COMMIT);
-   type     RxStateType is (IDLE, DROP, STRIP_HDR, COPY_PLD);
+   type     TxStateType is (IDLE, TX_ACK, TX_HDR, TX_OOB, TX_PLD, REX_HDR, REX_PLD, REX_CLEAN, REX_RST_RPTR, REX_ABORT, COMMIT);
+   type     RxStateType is (IDLE, DROP, STRIP_HDR, COPY_OOB, COPY_PLD);
 
    type     Slv9Array   is array (natural range <>) of std_logic_vector(8 downto 0);
    type     Uns8Array   is array (natural range <>) of unsigned(7 downto 0);
@@ -106,8 +112,10 @@ architecture rtl of RelLnk is
       txReq             : RelLnkSeqNo;
       txAck             : RelLnkSeqNo;
       txAckDly          : RelLnkSeqNo;
+      txOob             : std_logic_vector(7 downto 0);
       rxReq             : RelLnkSeqNo;
       rxAck             : RelLnkSeqNo;
+      rxOob             : std_logic_vector(7 downto 0);
       rexReq            : RelLnkSeqNo;
       curTime           : RelLnkTimeoutType;
       rexCmPtr          : signed(LD_REX_FIFO_DEPTH_C downto 0);
@@ -122,8 +130,10 @@ architecture rtl of RelLnk is
       txReq             => to_unsigned(0, RelLnkSeqNo'length),
       txAck             => to_unsigned(0, RelLnkSeqNo'length),
       txAckDly          => to_unsigned(0, RelLnkSeqNo'length),
+      txOob             => (others => '0'),
       rxReq             => to_unsigned(0, RelLnkSeqNo'length),
       rxAck             => to_unsigned(0, RelLnkSeqNo'length),
+      rxOob             => (others => '0'),
       rexReq            => to_unsigned(0, RelLnkSeqNo'length),
       curTime           => (others => '0'),
       rexCmPtr          => (others => '0'),
@@ -152,6 +162,7 @@ begin
       r,
       datInpTx, vldInpTx, lstInpTx,
       rdyOutTx,
+      oobInpTx,
       datInpRx, vldInpRx, lstInpRx,
       rdyOutRx,
       fifoFull, fifoWrPtr, fifoEmpty, fifoRdPtr, fifoRdDat,
@@ -230,6 +241,17 @@ begin
                   end if;
                   v.rxState := IDLE;
                else
+                  v.rxState := COPY_OOB;
+               end if;
+            end if;
+
+         when COPY_OOB  =>
+            rdyInpRx <= '1';
+            if ( vldInpRx = '1' ) then
+               v.rxOob := datInpRx;
+               if ( lstInpRx = '1' ) then
+                  v.rxState := IDLE;
+               else
                   v.rxState := COPY_PLD;
                end if;
             end if;
@@ -252,10 +274,10 @@ begin
                -- fifoEmpty may temporarily assert if
                -- the read pipeline must be refilled.
                -- wait
-            elsif ( (fifoEmpty = '0') and ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_C ) ) then
+            elsif ( (fifoEmpty = '0') and ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_G ) ) then
                -- cleanup the retransmission queue
                   v.txState  := REX_CLEAN;
-            elsif ( (((r.txReq - r.txAck) < REL_LNK_WINSZ_C) and (vldInpTx = '1')) ) then
+            elsif ( ((r.txReq - r.txAck) < REL_LNK_WINSZ_G) and ( (vldInpTx = '1') or (oobInpTx /= r.txOob) ) ) then
                -- step sequence number
                v.txReq   := r.txReq + 1;
                v.rxAck   := r.rxReq;
@@ -276,7 +298,7 @@ begin
                -- the read pipeline must be refilled.
                -- wait
                if ( fifoEmpty  = '0' ) then
-                  if ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_C ) then
+                  if ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_G ) then
                      v.fifoHoldPtr := getLstPtr(rexFifoRdDat) + 1;
                      rexFifoRdEna  <= '1';
                      v.txState     := REX_RST_RPTR;
@@ -310,7 +332,24 @@ begin
             vldOutTx  <= '1';
             if ( rdyOutTx = '1' ) then
                fifoWrEna    <= '1';
-               v.txState    := TX_PLD;
+               v.txState    := TX_OOB;
+            end if;
+
+	 when TX_OOB =>
+            txDat     := oobInpTx;
+            v.txOob   := oobInpTx;
+            vldOutTx  <= '1';
+            if ( rdyOutTx = '1' ) then
+               fifoWrEna    <= '1';
+               if ( vldInpTx = '1' ) then
+                  v.txState    := TX_PLD;
+               else
+                  lstOutTx <= '1';
+                  v.txState    := COMMIT;
+                  -- record write pointer of last byte
+                  rexFifoWrEna <= '1';
+                  v.rexCmPtr   := rexFifoWrPtr + 1;
+               end if;
             end if;
 
 	 when TX_PLD =>
@@ -328,9 +367,9 @@ begin
                end if;
             end if;
 
-         when REX_HDR =>
+      when REX_HDR =>
             v.rexReq  := hdrGetReq(fifoRdDat);
-            if ( r.txAck - v.rexReq < REL_LNK_WINSZ_C ) then
+            if ( r.txAck - v.rexReq < REL_LNK_WINSZ_G ) then
                -- already ACKED; 
                v.txState     := REX_ABORT;
             else
@@ -352,14 +391,14 @@ begin
             if ( (not fifoEmpty and rdyOutTx) = '1' ) then
                fifoRdEna  <= '1';
                v.rexRdPtr := r.rexRdPtr + 1;
-               if ( (r.rexLstPtr = r.rexRdPtr) or ((r.txAck - r.rexReq) < REL_LNK_WINSZ_C) ) then
+               if ( (r.rexLstPtr = r.rexRdPtr) or ((r.txAck - r.rexReq) < REL_LNK_WINSZ_G) ) then
                   lstOutTx     <= '1';
 
                   -- successfully transmitted; store new timeout in REX fifo but don't commit in case
                   -- the retransmisions are aborted
                   rexFifoWrDat <= std_logic_vector(r.rexRdPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
                   rexFifoWrEna <= '1';
-                  if ( r.txAck - r.rexReq < REL_LNK_WINSZ_C ) then
+                  if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                      -- abort
                      report "REX ABORT";
                      v.txState     := REX_ABORT;
@@ -409,6 +448,7 @@ begin
       fifoWrDat    <= txDat;
       datOutTx     <= txDat;
       rexFifoCmPtr <= r.rexCmPtr;
+      oobOutRx     <= r.rxOob;
 
       rin      <=  v;
    end process P_COMB;
