@@ -6,6 +6,9 @@ PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb RelLnkRndTb
 
 all: $(PROGS)
 
+test: $(PROGS)
+	for i in $^ ; do ./$$i; done
+
 %.o: %.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
 
@@ -26,3 +29,5 @@ RelLnk.o: RelLnkPkg.o RelLnkFifo.o
 
 RelLnkTb.o: RelLnkPkg.o RelLnk.o RelLnkFifo.o
 RelLnkRndTb.o: RelLnkPkg.o RelLnk.o StrmPause.o
+
+.PHONY: clean test all
