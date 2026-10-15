@@ -2,6 +2,8 @@
 GHDL=ghdl
 GHDLFLAGS=-fsynopsys
 
+VPATH=../
+
 PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb RelLnkRndTb
 
 all: $(PROGS)
