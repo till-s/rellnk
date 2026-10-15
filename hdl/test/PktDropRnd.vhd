@@ -62,8 +62,11 @@ architecture rtl of PktDropRnd is
 
    signal trgLoc      : std_logic := '0';
    signal rnds        : signed(LD_RND_G downto 0);
+   signal rdyInpLoc   : std_logic;
 
 begin
+
+   rdyInp <= rdyInpLoc;
 
    P_SEQ  : process ( clk ) is
       variable s1 : positive := SEED_1_G;
@@ -77,10 +80,12 @@ begin
 	    s1     := SEED_1_G;
 	    s2     := SEED_2_G;
          else
-	    rnd(s1, s1, u);
-	    s := signed(resize(u, s'length)) - 1;
-            rnds   <= s;
-	    trgLoc <= (s(s'left) and ena);
+            if ( (vldInp and rdyInpLoc and lstInp) = '1' ) then
+	       rnd(s1, s1, u);
+	       s := signed(resize(u, s'length)) - 1;
+               rnds   <= s;
+	       trgLoc <= (s(s'left) and ena);
+            end if;
          end if;
       end if;
    end process P_SEQ;
@@ -99,7 +104,7 @@ begin
          datInp          => datInp,
          vldInp          => vldInp,
          lstInp          => lstInp,
-         rdyInp          => rdyInp,
+         rdyInp          => rdyInpLoc,
 
          datOut          => datOut,
          vldOut          => vldOut,
