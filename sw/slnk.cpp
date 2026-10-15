@@ -165,6 +165,7 @@ public:
 				} else {
 					// they haven't seen the ack to this? force
 					// retransmission of ack immediatelyl
+					//
 					rxAck_ = rxReq_ - 1;
 					wakeTx = true;
 					printf("RX Redundant REQ %u ACK %u; DROP\n", m->req, m->ack);
@@ -189,14 +190,11 @@ public:
 			MsgPtr m;
 			{
 				std::unique_lock<std::mutex> l(mtx_);
-				while ( 1 ) {
+				while ( rex_.empty() ) {
 					if ( rex_.empty() ) {
 						rexAdj_.wait(l);
 					} else {
-						if ( std::cv_status::timeout == rexAdj_.wait_until(l, rex_.front().second) ) {
-							// work to do!
-							break;
-						}
+						rexAdj_.wait_until(l, rex_.front().second);
 					}
 				}
 				// can only get here if the req_ queue is not empty!
