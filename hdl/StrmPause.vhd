@@ -92,7 +92,6 @@ begin
       v            :=  r;
       datOut       <= datInp;
       lstOut       <= lstInp;
-      lstOut       <= lstInp;
       vldOut       <= '0';
       rdyInp       <= '0';
       pauseAck     <= '0';
