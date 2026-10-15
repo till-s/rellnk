@@ -18,7 +18,7 @@ architecture rtl of RelLnkRndTb is
       if ( c ) then return t; else return f; end if;
    end function ite;
 
-   constant FIXED_STALL_C    : integer   := -1; --10;
+   constant FIXED_STALL_C    : integer   := -10; --10;
    constant FIXED_STALL_B2A_C: integer   := 8*FIXED_STALL_C;
    constant TIMEOUT_C        : natural   := 2**LD_PLD_SIZE_C * 5 * ite(FIXED_STALL_C > 0, FIXED_STALL_C, 1);
    constant WINSZ_C          : positive  := 3;

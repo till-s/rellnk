@@ -87,7 +87,7 @@ architecture rtl of RelLnk is
    signal   fifoWrPtr   : signed(LD_FIFO_DEPTH_G downto 0);
    signal   fifoRdPtr   : signed(LD_FIFO_DEPTH_G downto 0);
 
-   constant REX_FIFO_WIDTH_C : natural := fifoWrPtr'length + RelLnkTimeoutType'length;
+   constant REX_FIFO_WIDTH_C : natural := RelLnkSeqNoExt'length + fifoWrPtr'length + RelLnkTimeoutType'length;
 
    signal   rexFifoWrEna : std_logic;
    signal   rexFifoWrUndo: std_logic;
@@ -106,18 +106,22 @@ architecture rtl of RelLnk is
    type     Slv9Array   is array (natural range <>) of std_logic_vector(8 downto 0);
    type     Uns8Array   is array (natural range <>) of unsigned(7 downto 0);
 
+   subtype  ReqSeqNo    is RelLnkSeqNoExt;
+   subtype  AckSeqNo    is RelLnkSeqNoExt;
+
    type     RegType   is record
       txState           : TxStateType;
       rxState           : RxStateType;
-      txReq             : RelLnkSeqNo;
-      txAck             : RelLnkSeqNo;
-      txAckDly          : RelLnkSeqNo;
+      txReq             : RelLnkSeqNoExt;
+      txAck             : RelLnkSeqNoExt;
+      txAckDly          : RelLnkSeqNoExt;
       txOob             : std_logic_vector(7 downto 0);
-      rxReq             : RelLnkSeqNo;
-      rxAck             : RelLnkSeqNo;
+      rxReq             : RelLnkSeqNoExt;
+      rxAck             : RelLnkSeqNoExt;
       rxOob             : std_logic_vector(7 downto 0);
-      rexReq            : RelLnkSeqNo;
+      rexReq            : RelLnkSeqNoExt;
       curTime           : RelLnkTimeoutType;
+      sendAck           : boolean;
       rexCmPtr          : signed(LD_REX_FIFO_DEPTH_C downto 0);
       rexRdPtr          : signed(LD_FIFO_DEPTH_G downto 0);
       rexLstPtr         : signed(LD_FIFO_DEPTH_G downto 0);
@@ -127,36 +131,49 @@ architecture rtl of RelLnk is
    constant TX_REG_INIT_C : RegType := (
       txState           => IDLE,
       rxState           => IDLE,
-      txReq             => to_unsigned(0, RelLnkSeqNo'length),
-      txAck             => to_unsigned(0, RelLnkSeqNo'length),
-      txAckDly          => to_unsigned(0, RelLnkSeqNo'length),
+      txReq             => to_unsigned(0, RelLnkSeqNoExt'length),
+      txAck             => to_unsigned(0, RelLnkSeqNoExt'length),
+      txAckDly          => to_unsigned(0, RelLnkSeqNoExt'length),
       txOob             => (others => '0'),
-      rxReq             => to_unsigned(0, RelLnkSeqNo'length),
-      rxAck             => to_unsigned(0, RelLnkSeqNo'length),
+      rxReq             => to_unsigned(0, RelLnkSeqNoExt'length),
+      rxAck             => to_unsigned(0, RelLnkSeqNoExt'length),
       rxOob             => (others => '0'),
-      rexReq            => to_unsigned(0, RelLnkSeqNo'length),
+      rexReq            => to_unsigned(0, RelLnkSeqNoExt'length),
       curTime           => (others => '0'),
+      sendAck           => false,
       rexCmPtr          => (others => '0'),
       rexRdPtr          => (others => '0'),
       rexLstPtr         => (others => '0'),
       fifoHoldPtr       => (others => '0')
    );
 
-   signal   r           : RegType := TX_REG_INIT_C;
-   signal   rin         : RegType;
-
    function getTimeout(constant x : std_logic_vector) return RelLnkTimeoutType is
+      constant r : natural := 0;
+      constant l : natural := r + RelLnkTimeoutType'length - 1;
    begin
-      return RelLnkTimeoutType(x(RelLnkTimeoutType'range));
+      return RelLnkTimeoutType(x(l downto r));
    end function getTimeout;
 
    function getLstPtr(constant x : std_logic_vector) return signed is
+      constant r : natural := RelLnkTimeoutType'length;
+      constant l : natural := r + (LD_FIFO_DEPTH_G + 1) - 1;
    begin
-      return resize(shift_right(signed(x), RelLnkTimeoutType'length), LD_FIFO_DEPTH_G + 1);
+      -- don't resize right-shifted 'signed' since that would preserve a sign bit
+      -- shifted from a field to the left!
+      return signed(x(l downto r));
    end function getLstPtr;
 
-begin
+   function getReqNo(constant x : std_logic_vector) return RelLnkSeqNoExt is
+      constant r : natural := RelLnkTimeoutType'length + LD_FIFO_DEPTH_G + 1;
+      constant l : natural := r + RelLnkSeqNoExt'length - 1;
+   begin
+      return RelLnkSeqNoExt(x(l downto r));
+   end function getReqNo;
 
+   signal   r           : RegType := TX_REG_INIT_C;
+   signal   rin         : RegType;
+
+begin
 
    P_COMB : process (
       r,
@@ -171,35 +188,35 @@ begin
       variable v         : RegType;
       variable txDat     : std_logic_vector(7 downto 0);
    begin
-      v            :=  r;
-      fifoWrUndo   <= '0';
-      fifoRdUndo   <= '0';
-      fifoWrEna    <= '0';
-      fifoRdEna    <= '0';
-      rexFifoWrEna <= '0';
-      rexFifoRdEna <= '0';
-      rdyInpTx     <= '0';
-      vldOutTx     <= '0';
-      lstOutTx     <= '0';
-      rdyInpRx     <= '0';
-      vldOutRx     <= '0';
-      lstOutRx     <= '0';
-      txDat        := datInpTx;
-      rexFifoWrDat <= std_logic_vector(fifoWrPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
-      rexFifoWrUndo<= '0';
-      datOutRx     <= datInpRx;
-      lstOutRx     <= lstInpRx;
+      v             :=  r;
+      fifoWrUndo    <= '0';
+      fifoRdUndo    <= '0';
+      fifoWrEna     <= '0';
+      fifoRdEna     <= '0';
+      rexFifoWrEna  <= '0';
+      rexFifoRdEna  <= '0';
+      rdyInpTx      <= '0';
+      vldOutTx      <= '0';
+      lstOutTx      <= '0';
+      rdyInpRx      <= '0';
+      vldOutRx      <= '0';
+      lstOutRx      <= '0';
+      txDat         := datInpTx;
+      rexFifoWrDat  <= std_logic_vector(r.txReq) & std_logic_vector(fifoWrPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
+      rexFifoWrUndo <= '0';
+      datOutRx      <= datInpRx;
+      lstOutRx      <= lstInpRx;
 
-      v.curTime    := r.curTime + 1;
+      v.curTime     := r.curTime + 1;
 
       case ( r.rxState ) is
          when IDLE      =>
             if ( vldInpRx = '1' ) then
                -- ACK processing
-               if ( hdrGetAck(datInpRx) - r.txAck <= r.txReq - r.txAck ) then
+               if ( hdrGetAckExtend(datInpRx, r.txAck) - r.txAck <= r.txReq - r.txAck ) then
                   -- normal case; ack is in the retransmission queue
-                  v.txAckDly := hdrGetAck(datInpRx);
-                  v.txAck    := hdrGetAck(datInpRx);
+                  v.txAckDly := hdrGetAckExtend(datInpRx, r.txAck);
+                  v.txAck    := v.txAckDly;
                else
                   -- a redundant ack; ignore
                end if;
@@ -210,7 +227,7 @@ begin
                if ( hdrGetMsgTyp(datInpRx) = REL_LNK_MSG_ACK_C ) then
                   -- ignore req number of ACKONLY message
                else
-                  if ( hdrGetReq(datInpRx) = r.rxReq + 1 ) then
+                  if ( hdrGetReqExtend(datInpRx, r.rxReq) = r.rxReq + 1 ) then
                      -- new in-order request; 
                      if ( FAST_ACK_G ) then
                         v.rxReq   := r.rxReq + 1;
@@ -221,7 +238,9 @@ begin
                      v.rxState := STRIP_HDR;
                   else
                      -- they might not have not seen rxReq; ensure we send an ACK
-                     v.rxAck := r.rxReq - 1;
+                     -- NOTE: do not set rxAck back to rxReq - 1; it may be picked
+                     --       up by the TX and send out of order! 
+                     v.sendAck := true;
                   end if;
                end if;
             end if;
@@ -270,11 +289,7 @@ begin
 
       case ( r.txState ) is
          when IDLE     =>
-            if ( (not rexFifoEmpty and fifoEmpty) = '1' ) then
-               -- fifoEmpty may temporarily assert if
-               -- the read pipeline must be refilled.
-               -- wait
-            elsif ( (fifoEmpty = '0') and ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_G ) ) then
+            if ( (rexFifoEmpty = '0') and ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) ) then
                -- cleanup the retransmission queue
                   v.txState  := REX_CLEAN;
             elsif ( ((r.txReq - r.txAck) < REL_LNK_WINSZ_G) and ( (vldInpTx = '1') or (oobInpTx /= r.txOob) ) ) then
@@ -282,12 +297,13 @@ begin
                v.txReq   := r.txReq + 1;
                v.rxAck   := r.rxReq;
                v.txState := TX_HDR;
-            elsif ( r.rxReq /= r.rxAck ) then
+            elsif ( r.rxReq /= r.rxAck or r.sendAck ) then
                v.rxAck   := r.rxReq;
                v.txState := TX_ACK;
             elsif ( (rexFifoEmpty = '0' ) and (signed(r.curTime - getTimeout(rexFifoRdDat)) >= 0) ) then
                v.txState    := REX_HDR;
                v.rexRdPtr   := r.fifoHoldPtr;
+               v.rexReq     := getReqNo(rexFifoRdDat);
                v.rexLstPtr  := getLstPtr(rexFifoRdDat);
                rexFifoRdEna <= '1';
             end if;
@@ -298,7 +314,7 @@ begin
                -- the read pipeline must be refilled.
                -- wait
                if ( fifoEmpty  = '0' ) then
-                  if ( (r.txAck - hdrGetReq(fifoRdDat)) < REL_LNK_WINSZ_G ) then
+                  if ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) then
                      v.fifoHoldPtr := getLstPtr(rexFifoRdDat) + 1;
                      rexFifoRdEna  <= '1';
                      v.txState     := REX_RST_RPTR;
@@ -321,6 +337,7 @@ begin
 	 when TX_ACK =>
             -- pure ACK messages are not retransmitted
             txDat     := mkHdr1(r.txReq, r.rxAck, REL_LNK_MSG_ACK_C);
+            v.sendAck := false;
             vldOutTx  <= '1';
             lstOutTx  <= '1';
             if ( rdyOutTx = '1' ) then
@@ -329,6 +346,7 @@ begin
 
 	 when TX_HDR =>
             txDat     := mkHdr1(r.txReq, r.rxAck, REL_LNK_MSG_DAT_C);
+            v.sendAck := false;
             vldOutTx  <= '1';
             if ( rdyOutTx = '1' ) then
                fifoWrEna    <= '1';
@@ -368,17 +386,17 @@ begin
             end if;
 
       when REX_HDR =>
-            v.rexReq  := hdrGetReq(fifoRdDat);
-            if ( r.txAck - v.rexReq < REL_LNK_WINSZ_G ) then
+            if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                -- already ACKED; 
                v.txState     := REX_ABORT;
             else
                -- update ACK field; may have changed since
                -- we sent the original
                v.rxAck   := r.rxReq;
-               txDat     := mkHdr1(v.rexReq, v.rxAck, hdrGetMsgTyp(fifoRdDat));
-               vldOutTx  <= '1';
-               if ( rdyOutTx = '1' ) then
+               txDat     := mkHdr1(r.rexReq, v.rxAck, hdrGetMsgTyp(fifoRdDat));
+               v.sendAck := false;
+               vldOutTx  <= not fifoEmpty; -- empty may temporarily assert
+               if ( (not fifoEmpty and rdyOutTx) = '1' ) then
                   fifoRdEna  <= '1';
                   v.rexRdPtr := r.rexRdPtr + 1;
                   v.txState  := REX_PLD;
@@ -396,7 +414,7 @@ begin
 
                   -- successfully transmitted; store new timeout in REX fifo but don't commit in case
                   -- the retransmisions are aborted
-                  rexFifoWrDat <= std_logic_vector(r.rexLstPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
+                  rexFifoWrDat <= std_logic_vector(r.rexReq) & std_logic_vector(r.rexLstPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
                   rexFifoWrEna <= '1';
                   if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                      -- abort
@@ -410,6 +428,7 @@ begin
                      rexFifoRdEna <= '1';
                      v.txState    := REX_HDR;
                      v.rexLstPtr  := getLstPtr(rexFifoRdDat);
+                     v.rexReq     := getReqNo(rexFifoRdDat);
                   else
                      -- nothing else to retransmit; commit
                      v.rexCmPtr   := rexFifoWrPtr + 1;
@@ -428,9 +447,10 @@ begin
             -- new timeouts
             if ( rexFifoEmpty = '0' ) then
                -- copy read data to the back
-               rexFifoWrDat <= std_logic_vector(getLstPtr(rexFifoRdDat)) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
-               rexFifoWrEna <= '1';
-               rexFifoRdEna <= '1';
+               rexFifoWrDat                  <= rexFifoRdDat;
+               rexFifoWrDat(r.curTime'range) <=  std_logic_vector(r.curTime + REX_TIMEOUT_G);
+               rexFifoWrEna                  <= '1';
+               rexFifoRdEna                  <= '1';
             else
                -- commit the written data
                v.rexCmPtr   := rexFifoWrPtr;
