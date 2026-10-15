@@ -396,7 +396,7 @@ begin
 
                   -- successfully transmitted; store new timeout in REX fifo but don't commit in case
                   -- the retransmisions are aborted
-                  rexFifoWrDat <= std_logic_vector(r.rexRdPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
+                  rexFifoWrDat <= std_logic_vector(r.rexLstPtr) & std_logic_vector(r.curTime + REX_TIMEOUT_G);
                   rexFifoWrEna <= '1';
                   if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                      -- abort
