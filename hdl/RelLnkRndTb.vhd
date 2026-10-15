@@ -1,9 +1,8 @@
 library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
-use     ieee.math_real.all;
 
-use     work.CrcPkg.all;
+use     work.RndPkg.all;
 use     work.RelLnkPkg.all;
 
 entity RelLnkRndTb is
@@ -19,7 +18,7 @@ architecture rtl of RelLnkRndTb is
       if ( c ) then return t; else return f; end if;
    end function ite;
 
-   constant FIXED_STALL_C    : integer   := 10;
+   constant FIXED_STALL_C    : integer   := -1; --10;
    constant FIXED_STALL_B2A_C: integer   := 8*FIXED_STALL_C;
    constant TIMEOUT_C        : natural   := 2**LD_PLD_SIZE_C * 5 * ite(FIXED_STALL_C > 0, FIXED_STALL_C, 1);
    constant WINSZ_C          : positive  := 3;
@@ -29,6 +28,9 @@ architecture rtl of RelLnkRndTb is
    constant PKT_SEED_2_C     : positive  := 7239;
 
    constant N_PKTS_C         : positive  := 1000;
+
+   constant LD_DROP_C        : positive  := 4;
+   constant DROP_ENA_C       : std_logic := '1';
 
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
@@ -42,7 +44,6 @@ architecture rtl of RelLnkRndTb is
    signal rdyInpI            : std_logic;
    signal lstInpI            : std_logic;
 
-
    signal datOutO            : std_logic_vector(7 downto 0);
    signal vldOutO            : std_logic;
    signal rdyOutO            : std_logic := '1';
@@ -52,32 +53,35 @@ architecture rtl of RelLnkRndTb is
    signal rdyOutI            : std_logic := '1';
    signal lstOutI            : std_logic;
 
-   signal data2bO            : std_logic_vector(7 downto 0);
-   signal data2bI            : std_logic_vector(7 downto 0);
-   signal vlda2bO            : std_logic;
-   signal vlda2bI            : std_logic;
-   signal rdya2bO            : std_logic;
-   signal rdya2bI            : std_logic;
-   signal lsta2bO            : std_logic;
-   signal lsta2bI            : std_logic;
+   signal data2d             : std_logic_vector(7 downto 0);
+   signal vlda2d             : std_logic;
+   signal rdya2d             : std_logic;
+   signal lsta2d             : std_logic;
 
-   signal datb2aO            : std_logic_vector(7 downto 0);
-   signal datb2aI            : std_logic_vector(7 downto 0);
-   signal vldb2aO            : std_logic;
-   signal vldb2aI            : std_logic;
-   signal rdyb2aO            : std_logic;
-   signal rdyb2aI            : std_logic;
-   signal lstb2aO            : std_logic;
-   signal lstb2aI            : std_logic;
+   signal datd2pab           : std_logic_vector(7 downto 0);
+   signal vldd2pab           : std_logic;
+   signal rdyd2pab           : std_logic;
+   signal lstd2pab           : std_logic;
 
-   signal datFbkO            : std_logic_vector(7 downto 0);
-   signal vldFbkO            : std_logic := '0';
-   signal rdyFbkO            : std_logic;
-   signal lstFbkO            : std_logic;
-   signal datFbkI            : std_logic_vector(7 downto 0);
-   signal vldFbkI            : std_logic := '0';
-   signal rdyFbkI            : std_logic;
-   signal lstFbkI            : std_logic;
+   signal datp2b             : std_logic_vector(7 downto 0);
+   signal vldp2b             : std_logic;
+   signal rdyp2b             : std_logic;
+   signal lstp2b             : std_logic;
+
+   signal datb2d             : std_logic_vector(7 downto 0);
+   signal vldb2d             : std_logic;
+   signal rdyb2d             : std_logic;
+   signal lstb2d             : std_logic;
+
+   signal datd2pba           : std_logic_vector(7 downto 0);
+   signal vldd2pba           : std_logic;
+   signal rdyd2pba           : std_logic;
+   signal lstd2pba           : std_logic;
+
+   signal datp2a             : std_logic_vector(7 downto 0);
+   signal vldp2a             : std_logic;
+   signal rdyp2a             : std_logic;
+   signal lstp2a             : std_logic;
 
    type Slv9Array  is array (natural range <>) of std_logic_vector(8 downto 0);
    type Slv10Array is array (natural range <>) of std_logic_vector(9 downto 0);
@@ -88,21 +92,6 @@ architecture rtl of RelLnkRndTb is
    signal phase              : natural   := 0;
 
    constant END_PHASE_C : integer := 4;
-
-   procedure rnd(variable s1, s2: inout positive; variable o : out unsigned) is
-      variable v : real;
-   begin
-      uniform(s1, s2, v);
-      o := to_unsigned(integer(floor((2.0**o'length)*v)), o'length);
-   end procedure rnd;
-
-   procedure rnd(variable s1, s2: inout positive; variable o : out std_logic_vector) is
-      variable v : unsigned(o'range);
-   begin
-      rnd(s1, s2, v);
-      o := std_logic_vector(v);
-   end procedure rnd;
-
 
 begin
 
@@ -192,14 +181,106 @@ begin
          lstOutRx => open,
          rdyOutRx => '1',
 
-         datOutTx => data2bI,
-         vldOutTx => vlda2bI,
-         lstOutTx => lsta2bI,
-         rdyOutTx => rdya2bO,
-         datInpRx => datb2aO,
-         vldInpRx => vldb2aO,
-         lstInpRx => lstb2aO,
-         rdyInpRx => rdyb2aI
+         datOutTx => data2d,
+         vldOutTx => vlda2d,
+         lstOutTx => lsta2d,
+         rdyOutTx => rdya2d,
+         datInpRx => datp2a,
+         vldInpRx => vldp2a,
+         lstInpRx => lstp2a,
+         rdyInpRx => rdyp2a
+      );
+
+   U_DROP_A2B : entity work.PktDropRnd
+      generic map (
+         LD_RND_G        => LD_DROP_C,
+         SEED_1_G        => 19863,
+         SEED_2_G        => 886541
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         ena             => DROP_ENA_C,
+         ack             => open,
+
+         datInp          => data2d,
+         vldInp          => vlda2d,
+         lstInp          => lsta2d,
+         rdyInp          => rdya2d,
+
+         datOut          => datd2pab,
+         vldOut          => vldd2pab,
+         lstOut          => lstd2pab,
+         rdyOut          => rdyd2pab
+      );
+
+   U_PAUSE_A2B : entity work.StrmPauseRnd
+      generic map (
+         LD_PAUSE_G      => LD_PAUSE_C,
+         SEED_1_G        => 87,
+         SEED_2_G        => 777777,
+         FIXED_STALL_G   => FIXED_STALL_C
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         datInp          => datd2pab,
+         vldInp          => vldd2pab,
+         lstInp          => lstd2pab,
+         rdyInp          => rdyd2pab,
+
+         datOut          => datp2b,
+         vldOut          => vldp2b,
+         lstOut          => lstp2b,
+         rdyOut          => rdyp2b
+      );
+
+   U_PAUSE_B2A : entity work.StrmPauseRnd
+      generic map (
+         LD_PAUSE_G      => LD_PAUSE_C,
+         SEED_1_G        => 99,
+         SEED_2_G        => 888777,
+         FIXED_STALL_G   => FIXED_STALL_B2A_C
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         datInp          => datd2pba,
+         vldInp          => vldd2pba,
+         lstInp          => lstd2pba,
+         rdyInp          => rdyd2pba,
+
+         datOut          => datp2a,
+         vldOut          => vldp2a,
+         lstOut          => lstp2a,
+         rdyOut          => rdyp2a
+      );
+
+   U_DROP_B2A : entity work.PktDropRnd
+      generic map (
+         LD_RND_G        => LD_DROP_C,
+         SEED_1_G        => 31798,
+         SEED_2_G        => 999231
+      )
+      port map (
+         clk             => clk,
+         rst             => rst,
+
+         ena             => DROP_ENA_C,
+         ack             => open,
+
+         datInp          => datb2d,
+         vldInp          => vldb2d,
+         lstInp          => lstb2d,
+         rdyInp          => rdyb2d,
+
+         datOut          => datd2pba,
+         vldOut          => vldd2pba,
+         lstOut          => lstd2pba,
+         rdyOut          => rdyd2pba
       );
 
    U_PONG : entity work.RelLnk
@@ -222,196 +303,26 @@ begin
          lstOutRx => lstOutI,
          rdyOutRx => rdyOutO,
 
-         datOutTx => datb2aI,
-         vldOutTx => vldb2aI,
-         lstOutTx => lstb2aI,
-         rdyOutTx => rdyb2aO,
-         datInpRx => data2bO,
-         vldInpRx => vlda2bO,
-         lstInpRx => lsta2bO,
-         rdyInpRx => rdya2bI
+         datOutTx => datb2d,
+         vldOutTx => vldb2d,
+         lstOutTx => lstb2d,
+         rdyOutTx => rdyb2d,
+         datInpRx => datp2b,
+         vldInpRx => vldp2b,
+         lstInpRx => lstp2b,
+         rdyInpRx => rdyp2b
       );
 
-   B_PAUSE_A2B : block is
-      signal trg  : std_logic := '1';
-      signal ack  : std_logic;
-      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-   begin
-
-   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
-   begin
-
-      P_RND : process ( clk ) is
-         variable s1 : positive := 87;
-         variable s2 : positive := 777777;
-         variable  u : unsigned(pass'range);
-      begin
-         if ( rising_edge( clk ) ) then
-            trg <= '0';
-            if ( ack = '1' ) then
-               rnd(s1,s2,u);
-               pass <= u;
-               rnd(s1,s2,u);
-               paus <= u;
-               trg  <= '1';
-            end if;
-         end if;
-      end process P_RND;
-    
-   end generate G_RND_STALL;
-
-   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
-   begin
-      trg  <= '1';
-      pass <= (others => '0');
-      paus <= to_unsigned(FIXED_STALL_C, paus'length);
-   end generate G_FIXED_STALL;
-
-   U_PAUSE_A2B : entity work.StrmPause
+   U_PAUSE_INP : entity work.StrmPauseRnd
       generic map (
-         LD_PAUSE_G      => pass'length,
-         DATA_WIDTH_G    => 8
+         LD_PAUSE_G      => LD_PAUSE_C,
+         SEED_1_G        => 7869,
+         SEED_2_G        => 555555,
+         FIXED_STALL_G   => ite(FIXED_STALL_C >= 0, 0, -1)
       )
       port map (
          clk             => clk,
          rst             => rst,
-
-         trg             => trg,
-         -- let 'pass' transactions go undisturbed before the pause is enforced
-         pass            => pass,
-         pause           => paus,
-         -- asserted for the VLD/RDY cycle when the pause expired
-         pauseAck        => ack,
-
-         datInp          => data2bI,
-         vldInp          => vlda2bI,
-         lstInp          => lsta2bI,
-         rdyInp          => rdya2bO,
-
-         datOut          => data2bO,
-         vldOut          => vlda2bO,
-         lstOut          => lsta2bO,
-         rdyOut          => rdya2bI
-      );
-
-   end block B_PAUSE_A2B;
-
-   B_PAUSE_B2A : block is
-      signal trg  : std_logic := '1';
-      signal ack  : std_logic;
-      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-   begin
-
-   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
-   begin
-
-      P_RND : process ( clk ) is
-         variable s1 : positive := 99;
-         variable s2 : positive := 888777;
-         variable  u : unsigned(pass'range);
-      begin
-         if ( rising_edge( clk ) ) then
-            trg <= '0';
-            if ( ack = '1' ) then
-               rnd(s1,s2,u);
-               pass <= u;
-               rnd(s1,s2,u);
-               paus <= u;
-               trg  <= '1';
-            end if;
-         end if;
-      end process P_RND;
-    
-   end generate G_RND_STALL;
-
-   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
-   begin
-      trg  <= '1';
-      pass <= (others => '0');
-      paus <= to_unsigned(FIXED_STALL_B2A_C, paus'length);
-   end generate G_FIXED_STALL;
-
-   U_PAUSE_B2A : entity work.StrmPause
-      generic map (
-         LD_PAUSE_G      => pass'length,
-         DATA_WIDTH_G    => 8
-      )
-      port map (
-         clk             => clk,
-         rst             => rst,
-
-         trg             => trg,
-         -- let 'pass' transactions go undisturbed before the pause is enforced
-         pass            => pass,
-         pause           => paus,
-         -- asserted for the VLD/RDY cycle when the pause expired
-         pauseAck        => ack,
-
-         datInp          => datb2aI,
-         vldInp          => vldb2aI,
-         lstInp          => lstb2aI,
-         rdyInp          => rdyb2aO,
-
-         datOut          => datb2aO,
-         vldOut          => vldb2aO,
-         lstOut          => lstb2aO,
-         rdyOut          => rdyb2aI
-      );
-
-   end block B_PAUSE_B2A;
-
-   B_PAUSE_INP : block is
-      signal trg  : std_logic := '1';
-      signal ack  : std_logic;
-      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-   begin
-
-   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
-   begin
-      P_RND : process ( clk ) is
-         variable s1 : positive := 7869;
-         variable s2 : positive := 555555;
-         variable  u : unsigned(pass'range);
-      begin
-         if ( rising_edge( clk ) ) then
-            trg <= '0';
-            if ( ack = '1' ) then
-               rnd(s1,s2,u);
-               pass <= u;
-               rnd(s1,s2,u);
-               paus <= u;
-               trg  <= '1';
-            end if;
-         end if;
-      end process P_RND;
-   end generate G_RND_STALL;
-
-   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
-   begin
-      trg  <= '1';
-      pass <= (others => '0');
-      paus <= (others => '0');
-   end generate G_FIXED_STALL;
-
-
-   U_PAUSE_INP : entity work.StrmPause
-      generic map (
-         LD_PAUSE_G      => pass'length,
-         DATA_WIDTH_G    => 8
-      )
-      port map (
-         clk             => clk,
-         rst             => rst,
-
-         trg             => trg,
-         -- let 'pass' transactions go undisturbed before the pause is enforced
-         pass            => pass,
-         pause           => paus,
-         -- asserted for the VLD/RDY cycle when the pause expired
-         pauseAck        => ack,
 
          datInp          => datInpI,
          vldInp          => vldInpI,
@@ -424,59 +335,16 @@ begin
          rdyOut          => rdyInpI
       );
 
-   end block B_PAUSE_INP;
-
-   B_PAUSE_OUT : block is
-      signal trg  : std_logic := '1';
-      signal ack  : std_logic;
-      signal pass : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-      signal paus : unsigned(LD_PAUSE_C - 1 downto 0) := (others => '0');
-   begin
-
-   G_RND_STALL : if ( FIXED_STALL_C <= 0 ) generate
-   begin
-      P_RND : process ( clk ) is
-         variable s1 : positive := 4109;
-         variable s2 : positive := 111986;
-         variable  u : unsigned(pass'range);
-      begin
-         if ( rising_edge( clk ) ) then
-            trg <= '0';
-            if ( ack = '1' ) then
-               rnd(s1,s2,u);
-               pass <= u;
-               rnd(s1,s2,u);
-               paus <= u;
-               trg  <= '1';
-            end if;
-         end if;
-      end process P_RND;
-   end generate G_RND_STALL;
-
-   G_FIXED_STALL : if ( FIXED_STALL_C > 0 ) generate
-   begin
-      trg  <= '1';
-      pass <= (others => '0');
-      paus <= (others => '0');
-   end generate G_FIXED_STALL;
-
-
-
-   U_PAUSE_OUT : entity work.StrmPause
+   U_PAUSE_OUT : entity work.StrmPauseRnd
       generic map (
-         LD_PAUSE_G      => pass'length,
-         DATA_WIDTH_G    => 8
+         LD_PAUSE_G      => LD_PAUSE_C,
+         SEED_1_G        => 4109,
+         SEED_2_G        => 111986,
+         FIXED_STALL_G   => ite(FIXED_STALL_C >= 0, 0, -1)
       )
       port map (
          clk             => clk,
          rst             => rst,
-
-         trg             => trg,
-         -- let 'pass' transactions go undisturbed before the pause is enforced
-         pass            => pass,
-         pause           => paus,
-         -- asserted for the VLD/RDY cycle when the pause expired
-         pauseAck        => ack,
 
          datInp          => datOutI,
          vldInp          => vldOutI,
@@ -488,8 +356,6 @@ begin
          lstOut          => lstOutO,
          rdyOut          => rdyOutI
       );
-
-   end block B_PAUSE_OUT;
 
 end architecture rtl;
 

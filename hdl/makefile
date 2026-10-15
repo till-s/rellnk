@@ -27,7 +27,10 @@ RelLnkCrcGen.o: RelLnkPkg.o CrcPkg.o
 
 RelLnk.o: RelLnkPkg.o RelLnkFifo.o
 
+PktDropRnd.o: PktDrop.o RndPkg.o
+StrmPauseRnd.o: StrmPause.o RndPkg.o
+
 RelLnkTb.o: RelLnkPkg.o RelLnk.o RelLnkFifo.o
-RelLnkRndTb.o: RelLnkPkg.o RelLnk.o StrmPause.o
+RelLnkRndTb.o: RndPkg.o RelLnkPkg.o RelLnk.o StrmPauseRnd.o PktDropRnd.o
 
 .PHONY: clean test all
