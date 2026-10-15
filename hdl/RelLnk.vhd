@@ -33,14 +33,22 @@ use     work.RelLnkPkg.all;
 
 entity RelLnk is
    generic (
+      -- *must* be able to hold REL_LNK_WINSZ_G frames
+      -- including their header (2 bytes).
       LD_FIFO_DEPTH_G : natural;
+      -- retransmission timeout; pick so that this is
+      -- longer than the worst-case round trip time!
       REX_TIMEOUT_G   : RelLnkTimeoutType;
       -- enable sending ACK immediately after receiving the
       -- header; this may abort retransmissions (before the
       -- packet has been received!) but is more responsive
       -- if there are store-and forward elements downstream
       -- (e.g., CRC checking).
+      -- Use only if the peer is guaranteed to have sent
+      -- a full frame before it gets to see an immediate
+      -- ACK.
       FAST_ACK_G      : boolean;
+      -- max number of unacked frames that may be sent
       REL_LNK_WINSZ_G : positive range 1 to (2**RelLnkSeqNo'length - 1) := 3
    );
    port (
@@ -310,17 +318,12 @@ begin
 
          when REX_CLEAN =>
             if ( rexFifoEmpty = '0' ) then
-               -- fifoEmpty may temporarily assert if
-               -- the read pipeline must be refilled.
-               -- wait
-               if ( fifoEmpty  = '0' ) then
-                  if ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) then
-                     v.fifoHoldPtr := getLstPtr(rexFifoRdDat) + 1;
-                     rexFifoRdEna  <= '1';
-                     v.txState     := REX_RST_RPTR;
-                  else
-                     v.txState     := IDLE;
-                  end if;
+               if ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) then
+                  v.fifoHoldPtr := getLstPtr(rexFifoRdDat) + 1;
+                  rexFifoRdEna  <= '1';
+                  v.txState     := REX_RST_RPTR;
+               else
+                  v.txState     := IDLE;
                end if;
             else
                v.txState     := IDLE;

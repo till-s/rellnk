@@ -27,7 +27,7 @@ architecture rtl of RelLnkRndTb is
    constant PKT_SEED_1_C     : positive  := 237;
    constant PKT_SEED_2_C     : positive  := 7239;
 
-   constant N_PKTS_C         : positive  := 1000;
+   constant N_PKTS_C         : positive  := 2000;
 
    constant LD_DROP_C        : positive  := 4;
    constant DROP_ENA_C       : std_logic := '1';
