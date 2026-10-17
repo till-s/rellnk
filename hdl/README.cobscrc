@@ -1,0 +1,233 @@
+# CRC for COBS Encoded Streams
+
+In order to preserve the burst-detecting properties
+of the CRC it must be calculated over the bits that
+are sent over the lossy communication channel.
+
+This means that the CRC should be computed *after*
+COBS-encoding a stream. While this can easily be
+done an obvious problem arises because the so computed
+CRC may -- since it is not itself COBS encoded -- contain
+the special comma characters (which we assume to
+be 0x00 bytes here) and thus yield a stream that
+is no longer properly COBS encoded:
+
+COMMA, cobsencoded data, CRC, COMMA
+
+where it is possible that the CRC contains
+one or more COMMA characters.
+
+## Using Guard Bits
+
+We will show that this problem can be solved by
+adding guard bits to the message. A particularly
+simple case which we use here to demonstrate the
+idea is the case where allocate 3 bytes for the
+CRC added to the message. We designate two bits
+of these 24 bits as guard bits. This leaves 22
+bits for the CRC itself.
+
+### Little-Endian Representation
+
+For the following analysis we consistently assume
+that bits are serially transmitted with the least-
+significant bit first ('little-endian' bit ordering).
+
+In this case the guard bits shall be the two least-
+significant bits of the first byte assigned to
+the CRC in the message.
+
+### Role of the Guard Bits
+
+The original (cobs-encocded) message is effectively
+extended by two bits. We initially set these bits
+to zero.
+
+The 3 CRC bytes appended to the message have this
+layout:
+
+    CRC-bytes [0]:   CRC-bits[ 5 downto  0] : guard_bit_1 : guard_bit_0
+    CRC-bytes [1]:   CRC-bits[13 downto  6]
+    CRC-bytes [2]:   CRC-bits[21 downto 14]
+
+### Amended CRC
+
+Since the message has been extended by two bits 
+these two bits must be added to the CRC computation as well:
+
+   1. Compute CRC over all COBS-encoded bytes of the message
+   2. Add two zero *bits* to the CRC:
+       a) if ls-bit of CRC is one then right-shift the CRC 
+          (by 1 bit) and XOR with the polynomial; otherwise
+          right-shift only.
+       b) repeat step a) one more time.
+
+### Effect of setting one of the guard bits.
+
+The CRC has the fundamental property that when
+a message 'a' is XORed with a message 'b' then
+the CRC of the so combined message is XOR of the
+individual CRCs (any 'initial' value of the CRC
+has to be properly taken into account):
+
+    CRC(a XOR b) = CRC(a) xor CRC(b)
+
+Thus, when we set one of the guard bits the CRC can
+be XORed with the CRC of the respective guard bit!
+
+These CRCs, however are very simple: 'guard_bit_1'
+is technically the least-significant bit of the message;
+the CRC is simply the polynomial itself!
+
+Similarly, the CRC of the 'guard_bit_0' is the
+polynomial right-shifted by one bit (note that
+the rightmost bit spills into guard_bit_1 and
+has to be properly XORed).
+
+Another way to look at this is that the guard bit
+is simply the highest-power bit of the polynomial
+which is normally used implicitly. XORing the
+any power of the full polynomial does not
+change the CRC.
+
+### Using the Guard Bits and Their CRC
+
+As we have shown we perform any one or
+both of the following operations without
+affecting the total CRC of the message.
+
+ 1. set guard_bit_1 and XOR the CRC with the polynomial
+ 2. set guard_bit_0 and XOR the CRC with the polynomial
+    right-shifted by one bit. Note that this right-shift
+    spills into guard_bit_1; i.e. the final value
+    of guard_bit_1 is inverted if guard_bit_0 is
+    set AND the least-significant bit of the polynomial
+    (the *stored* polynomial, i.e., the bit associated
+    with the power 1) is set.
+
+The idea now is that we have two operations
+that can be used to modify the CRC in order to
+avoid that any of the three bytes is a COMMA.
+
+ 1. Using any one or both of the operations above
+    guarantees that at least one guard bit is set.
+    Consequently, the first CRC byte is guaranteed
+    *not* to be a comma.
+ 2. If the polynomial meets certain criteria then
+    properly selecting one of the four possible choices
+       a) do nothing (if amended CRC contains no COMMAs)
+       b) XOR with guard_bit_1 and its CRC
+       c) XOR with guard_bit_0 and its CRC
+       d) XOR both guard bits and their CRCs
+    allow us *always* to guarantee that none of the three
+    CRC bytes are a COMMA byte.
+
+### Constraints on Polynomial
+
+Since we use the polynomial ('P') to 'spoil' the last two
+CRC bytes it must not itself contain a COMMA:
+
+   1. `P[21 downto 14] != 0x00`
+   2. `P[13 downto  6] != 0x00`
+
+The same must hold for the right-shifted polynomial
+(corresponding to guard bit 0):
+
+   3. `P[21 downto 15] != 0x00`
+   4. `P[14 downto  7] != 0x00`
+
+As well as their XOR
+
+   5. `1. XOR 3. != 0x00`
+   6. `2. XOR 4. != 0x00`
+
+If we use an integer representation of the (little-endian)
+polynomial then we can state this as follows:
+
+     G1 = ((P<<1)|1)<<1
+     G0 = ((P<<1)|1)<<0
+     Gx = G0 XOR G1
+
+     (G0 & 0xff0000) != 0
+     (G1 & 0xff0000) != 0
+     (Gx & 0xff0000) != 0
+     (G0 & 0x00ff00) != 0
+     (G1 & 0x00ff00) != 0
+     (Gx & 0x00ff00) != 0
+
+### Example
+
+Consider the 22-bit polynomial (Koopman)
+
+     P = 0x397e21
+
+In this case
+
+     G0 = (P<<2)|2 = 0xe5f886
+     G1 = (P<<1)|1 = 0x72fc43
+     G0 XOR G1     = 0x9704c5
+
+So this polynomial meets the conditions above.
+
+We proceed as follows:
+
+     1. compute CRC over COBS-encoded message (using above polynomial)
+     2. add two zero *bits* to this CRC.
+     3. CRC <<= 2   (shift left; the two lsbits are the guard bits)
+     4. IF (CRC & 0xff0000) != 0 AND (CRC & 0x00ff00) != 0 AND (CRC & 0x0000ff) != 0
+        (no COMMA present) => SKIP to step 6.
+     5. At least one byte is a COMMA; we must select one or both guards;
+        either one of them will render the rightmost byte nonzero so
+        we may focus on the leftmost two bytes.
+
+        Note that XORing any combination of G0,G1 or both may modify the CRC
+        such that one (or both) of the LHS bytes become zero; a situation
+        that must and can be avoided. Consider, e.g.:
+
+           (CRC & 0x0000ff) = 0x00 (RHS byte of CRC is a COMMA; must use guard)
+           (CRC & 0xffff00) = (G0 & 0xffff00) (LHS bytes match G0 -> XORing G0 would
+                                               make both bytes COMMAs)
+
+        However, because the upper bytes match G0 and G0 XOR G1 meed the constraint
+        we can simply XOR with G1 in this case and ensure that all three bytes are nonzero.
+
+        another possibility is
+
+           (CRC & 0x0000ff) = 0x00 (RHS byte of CRC is a COMMA; must use guard)
+           (CRC & 0xff0000) = (G0 & 0xff0000) (LHS byte matches G0)
+           (CRC & 0x00ff00) = (G1 & 0x00ff00) (MID byte matches G1)
+
+        in this case a single guard is not enough since either one would render
+        a COMMA either in the LHS or MID position; however, applying *both*
+        guards avoids this in this scenario.
+
+        Hence:
+           if LHS matches G1:
+              if MID matches G0:
+                  => USE BOTH
+              else
+                  => USE G0
+           elsif LHS matches G0:
+              if MID matches G1:
+                  => USE BOTH
+              else
+                  => USE G1
+           else:
+              if MID matches G1
+                  => USE G0
+              elsif MID matches G0
+                  => USE G1
+              else
+                  => USE G0 (or G1, either choice works)
+
+     6. Append       CRC & 0xff to the byte stream
+     7. Append (CRC>> 8) & 0xff to the byte stream
+     8. Append (CRC>>16) & 0xff to the byte stream
+
+## Effect on the Receiver
+
+Since the guard bits and their CRCs were manipulated in a way
+consistent with the CRC's math by the sender the receiver does
+not have to take any special action and may simply compute the
+CRC over all bytes (including the appended three CRC bytes)
+and check for the expected value.
