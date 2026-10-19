@@ -63,7 +63,7 @@ end entity CobsCrcLE15_22Check;
 
 architecture rtl of CobsCrcLE15_22Check is
 
-   constant CRC_N_BYTES_C : natural := (POLY_G'length + 7)/8;
+   constant CRC_N_BYTES_C : natural := CobsCrc15_22NumCrcBytes(POLY_G);
 
    signal   fifoFull    : std_logic;
    signal   fifoEmpty   : std_logic;

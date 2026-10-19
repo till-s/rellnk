@@ -127,6 +127,9 @@ package CobsCrcPkg is
    function CobsCrc15_22GuardBits(constant POLY : std_logic_vector)
    return natural;
 
+   function CobsCrc15_22NumCrcBytes(constant P : std_logic_vector)
+   return positive;
+
 end package CobsCrcPkg;
 
 package body CobsCrcPkg is
@@ -218,5 +221,11 @@ package body CobsCrcPkg is
       end if;
       return 2;
    end function CobsCrc15_22GuardBits;
+
+   function CobsCrc15_22NumCrcBytes(constant P : std_logic_vector)
+   return positive is
+   begin
+      return (P'length + CobsCrc15_22GuardBits(P) + CobsCrc15_22UsrBits(P) + 7)/8;
+   end function CobsCrc15_22NumCrcBytes;
 
 end package body CobsCrcPkg;

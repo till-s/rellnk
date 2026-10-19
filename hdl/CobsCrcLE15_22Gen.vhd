@@ -41,7 +41,7 @@ entity CobsCrcLE15_22Gen is
    generic (
       POLY_G         : std_logic_vector := CRC15_POLY_LE_C;
       -- initial value ('leading-zeroes' detection)
-      CRC_INIT_G     : std_logic_vector(14 downto 0) := CRC15_INIT_LE_C;
+      CRC_INIT_G     : std_logic_vector := CRC15_INIT_LE_C;
 
       -- magic value; crc(POLY_G, MAGIC_G) must yield x"4000"; see CobsCrcPkg
       -- only used if POLY_G'length = 15 (single guard bit)
@@ -71,6 +71,8 @@ end entity CobsCrcLE15_22Gen;
 architecture rtl of CobsCrcLE15_22Gen is
 
    constant POLY_N_BYTES_C     : natural          := (POLY_G'length + 7)/8;
+   -- number of bytes that are free of guard bits
+   constant POLY_LEFT_BYTES_C  : natural          := POLY_G'length/8;
 
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms
@@ -78,10 +80,10 @@ architecture rtl of CobsCrcLE15_22Gen is
 
    -- 'middle' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'medium' order terms
-   constant P_M_C              : std_logic_vector := POLY_G(POLY_G'left - 8 downto POLY_G'left - 8*(POLY_N_BYTES_C-1) + 1);
+   constant P_M_C              : std_logic_vector := POLY_G(POLY_G'left - 8 downto POLY_G'left - 8*POLY_LEFT_BYTES_C + 1);
    -- 'right' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'highest' order terms
-   constant P_R_C              : std_logic_vector := POLY_G(POLY_G'left - 8*(POLY_N_BYTES_C-1) downto 0);
+   constant P_R_C              : std_logic_vector := POLY_G(POLY_G'left - 8*POLY_LEFT_BYTES_C downto 0);
 
    -- right-shifted polynomial
    constant POLY_R_C           : std_logic_vector := '0' & POLY_G(POLY_G'left downto 1);
@@ -221,9 +223,9 @@ begin
          when APPEND_CRC_2 =>
             rdyInp <= '0'; -- stop input
             vldOut <= '1';
-            datOut <= r.crc(P_L_C'range);
+            datOut <= r.crc(P_M_C'range);
             if ( rdyOut = '1' ) then
-               v.state := APPEND_EOF;
+               v.state := APPEND_CRC_3;
             end if;
 
          when APPEND_CRC_3 =>

@@ -59,7 +59,7 @@ package body CrcPkg is
             v := v xor std_logic_vector(resize(unsigned(POLY), v'length));
          end if;
       end loop;
-      return v;
+      return v(POLY'length - 1 downto 0);
    end function CrcBitWiseLE;
 
    function CrcWrdWiseLE(constant POLY: in std_logic_vector; constant crc : in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector is
@@ -79,7 +79,7 @@ package body CrcPkg is
             v := v xor POLY;
          end if;
       end loop;
-      return v;
+      return v(v'left downto v'left - POLY'length + 1);
    end function CrcBitWiseBE;
 
    function CrcInitAllOnesLE(constant POLY: in std_logic_vector) return std_logic_vector is
