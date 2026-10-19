@@ -34,6 +34,11 @@ package CrcPkg is
    function CrcWrdWiseLE(constant POLY: in std_logic_vector; constant crc : in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector;
 
    function CrcBitWiseBE(constant POLY: in std_logic_vector; constant data: in std_logic_vector) return std_logic_vector;
+
+   -- compute the CRC over a bit-string of all-ones; the length matches the
+   -- length of POLY
+   function CrcInitAllOnesLE(constant POLY: in std_logic_vector) return std_logic_vector;
+   function CrcInitAllOnesBE(constant POLY: in std_logic_vector) return std_logic_vector;
 end package CrcPkg;
 
 package body CrcPkg is
@@ -76,5 +81,17 @@ package body CrcPkg is
       end loop;
       return v;
    end function CrcBitWiseBE;
+
+   function CrcInitAllOnesLE(constant POLY: in std_logic_vector) return std_logic_vector is
+      constant ONES_C : std_logic_vector(POLY'range) := (others => '1');
+   begin
+      return CrcBitWiseLE(POLY, ONES_C);
+   end function CrcInitAllOnesLE;
+
+   function CrcInitAllOnesBE(constant POLY: in std_logic_vector) return std_logic_vector is
+      constant ONES_C : std_logic_vector(POLY'range) := (others => '1');
+   begin
+      return CrcBitWiseBE(POLY, ONES_C);
+   end function CrcInitAllOnesBE;
 
 end package body CrcPkg;

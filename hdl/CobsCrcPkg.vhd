@@ -28,6 +28,8 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
+use     work.CrcPkg.all;
+
 package CobsCrcPkg is
 
    constant CRC15_POLY_LE_C : std_logic_vector(14 downto 0) := "101100000110000";
@@ -38,7 +40,7 @@ package CobsCrcPkg is
    -- the CRC:
    -- ** All the following analysis is done in a little-endian world **
    -- ** and assumes the CRC and extra bit fit in two bytes          **
-   -- 
+   --
    -- Appending one zero-bit to the data yields some CRC (including the
    -- zero-bit) the can be split into two bytes. The first byte contains
    -- any trailing data bits, the extra bit and the high-order bits (in polynomial-view)
@@ -76,9 +78,9 @@ package CobsCrcPkg is
    -- Because these two conditions cover all the bits of the CRC this
    -- means that only one well-defined value needs to be handled as
    -- a corner case.
-   -- 
+   --
    -- After XORing the corner-case with the guard bit and the polynomial
-   --  1. the crc-hight-order bits match the polynomial low order bits
+   --  1. the crc-high-order bits match the polynomial high order bits
    --  2. the crc-low-order-byte is zero.
    -- Because in all other cases extra == '1' implies that at least one of
    -- the CRC parts are zero (before XOR with the polynomial) the special
@@ -90,13 +92,14 @@ package CobsCrcPkg is
    -- We can encode the special case so that the CRC has just one bit set; i.e.,
    -- we chose a MAGIC value so that, e.g., crc(MAGIC) = 0x4000 which simplifies
    -- the decoder.
-   -- 
+   --
    -- For the polynomial 0x5830 the magic value 0xf4a produces a CRC of 0x4000.
    -- This needs to be XORed with the high-order bits of the polynomial.
-   -- Since low-order byte of the magical value 
+   -- Since low-order byte of the magical value
    -- half the final CRC does meet the condition for the magical value.
-   constant CRC15_INIT_LE_C : std_logic_vector(CRC15_POLY_LE_C'range) := (others => '1');
-   constant CRC15_INIT_BE_C : std_logic_vector(CRC15_POLY_BE_C'range) := (others => '1');
+   constant CRC15_INIT_LE_C : std_logic_vector(CRC15_POLY_LE_C'range) := CrcInitAllOnesLE(CRC15_POLY_LE_C);
+   constant CRC15_INIT_BE_C : std_logic_vector(CRC15_POLY_BE_C'range) := CrcInitAllOnesBE(CRC15_POLY_BE_C);
+
    -- magic value to be XORed into the corner-case crc
    constant MAGIC15_LE_C    : std_logic_vector(CRC15_POLY_LE_C'range) := ("000" & x"f4a");
    constant MAGIC15_BE_C    : std_logic_vector(CRC15_POLY_BE_C'range) := ("010100101111000");
@@ -122,4 +125,5 @@ package body CobsCrcPkg is
    begin
       return ((not crc(0) or g) = '1') and (unsigned(crc(crc'left downto 1)) = 0);
    end function CRC15_OK_BE_F;
+
 end package body CobsCrcPkg;

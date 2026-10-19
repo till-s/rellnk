@@ -1,3 +1,4 @@
+d:
 
 GHDL=ghdl
 GHDLFLAGS=-fsynopsys
@@ -9,7 +10,7 @@ PROGS=CobsCrc15GenTb CobsCrc15CheckTb RelLnkTb RelLnkRndTb
 all: $(PROGS)
 
 test: $(PROGS)
-	for i in $^ ; do ./$$i; done
+	true $(addprefix && ./,$^)
 
 %.o: %.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
@@ -26,6 +27,8 @@ CobsCrc15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrc15Check.o CobsCrc15Gen.o
 CobsCrc15Check.o: CobsCrcPkg.o CrcPkg.o PktUtilFifo.o
 
 CobsCrc15Gen.o: CobsCrcPkg.o CrcPkg.o
+
+CobsCrcPkg.o: CrcPkg.o
 
 RelLnk.o: RelLnkPkg.o PktUtilFifo.o
 
