@@ -37,7 +37,7 @@ use     work.RelLnkPkg.all;
 -- A guard bit is used to ensure the CRC does not have
 -- null/EOF bytes.
 
-entity RelLnkCrcGen is
+entity CobsCrcGen is
    generic (
       COBS_EOF_G     : std_logic_vector(7 downto 0) := x"00"
    );
@@ -52,9 +52,9 @@ entity RelLnkCrcGen is
       vldOut         : out std_logic;
       rdyOut         : in  std_logic
    );
-end entity RelLnkCrcGen;
+end entity CobsCrcGen;
 
-architecture rtl of RelLnkCrcGen is
+architecture rtl of CobsCrcGen is
 
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms

@@ -31,10 +31,10 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.RelLnkPkg.all;
 
-entity RelLnkCrcCheckTb is
-end entity RelLnkCrcCheckTb;
+entity CobsCrcCheckTb is
+end entity CobsCrcCheckTb;
 
-architecture rtl of RelLnkCrcCheckTb is
+architecture rtl of CobsCrcCheckTb is
 
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
@@ -219,7 +219,7 @@ begin
    end process P_FEED;
 
 
-   U_DUT_GEN : entity work.RelLnkCrcGen
+   U_DUT_GEN : entity work.CobsCrcGen
       port map (
          clk    => clk,
          rst    => rst,
@@ -231,7 +231,7 @@ begin
          rdyOut => rdyOut
       );
 
-   U_DUT_CHK : entity work.RelLnkCrcCheck
+   U_DUT_CHK : entity work.CobsCrcCheck
       generic map (
          LD_FIFO_DEPTH_G => 3,
          COBS_CHECK_EN_G => true

@@ -4,7 +4,7 @@ GHDLFLAGS=-fsynopsys
 
 VPATH=../
 
-PROGS=RelLnkCrcGenTb RelLnkCrcCheckTb RelLnkTb RelLnkRndTb
+PROGS=CobsCrcGenTb CobsCrcCheckTb RelLnkTb RelLnkRndTb
 
 all: $(PROGS)
 
@@ -20,12 +20,12 @@ $(PROGS):%Tb: %Tb.o
 clean:
 	$(RM) *.o work-*.cf $(PROGS) dump.ghw
 
-RelLnkCrcCheckTb.o: RelLnkPkg.o RelLnkCrcCheck.o RelLnkCrcGen.o
-RelLnkCrcGenTb.o: RelLnkPkg.o RelLnkCrcCheck.o RelLnkCrcGen.o
+CobsCrcCheckTb.o: RelLnkPkg.o CobsCrcCheck.o CobsCrcGen.o
+CobsCrcGenTb.o: RelLnkPkg.o CobsCrcCheck.o CobsCrcGen.o
 
-RelLnkCrcCheck.o: RelLnkPkg.o CrcPkg.o RelLnkFifo.o
+CobsCrcCheck.o: RelLnkPkg.o CrcPkg.o RelLnkFifo.o
 
-RelLnkCrcGen.o: RelLnkPkg.o CrcPkg.o
+CobsCrcGen.o: RelLnkPkg.o CrcPkg.o
 
 RelLnk.o: RelLnkPkg.o RelLnkFifo.o
 

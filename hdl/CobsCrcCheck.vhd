@@ -31,7 +31,7 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.RelLnkPkg.all;
 
-entity RelLnkCrcCheck is
+entity CobsCrcCheck is
    generic (
       LD_FIFO_DEPTH_G : natural;
       COBS_EOF_G      : std_logic_vector( 7 downto 0) := x"00";
@@ -53,9 +53,9 @@ entity RelLnkCrcCheck is
       -- disgnostics
       dropping        : out std_logic
    );
-end entity RelLnkCrcCheck;
+end entity CobsCrcCheck;
 
-architecture rtl of RelLnkCrcCheck is
+architecture rtl of CobsCrcCheck is
 
    constant CRC_N_BYTES_C : natural := 2;
 
