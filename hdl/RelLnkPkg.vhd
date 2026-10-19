@@ -36,84 +36,6 @@ package RelLnkPkg is
    --      The flag bit indicates whether the packet carries payload
    --      or protocol data,
    --  2.  payload (or protocol data) bytes
-   --  3.  CRC
-
-   constant CRC_POLY_LE_C : std_logic_vector(14 downto 0) := "101100000110000";
-   constant CRC_POLY_BE_C : std_logic_vector(14 downto 0) := "000011000001101";
-
-   -- CRC should be taken *over* the COBS encoded packet (to properly detect
-   -- bit-error bursts). Adding one additional bit to avoid EOF markers in
-   -- the CRC:
-   -- ** All the following analysis is done in a little-endian world **
-   -- ** and assumes the CRC and extra bit fit in two bytes          **
-   -- 
-   -- Appending one zero-bit to the data yields some CRC (including the
-   -- zero-bit) the can be split into two bytes. The first byte contains
-   -- any trailing data bits, the extra bit and the high-order bits (in polynomial-view)
-   -- of the CRC; the second byte contains the low-order 8 bits of the
-   -- CRC:
-   --    [data_byte],
-   --    ...
-   --    [data_byte],
-   --    [crc-high-order:extra_bit(:optional_last_data_bits)]
-   --    [crc-low-order-byte]
-   --
-   -- 'optional_data-bits' are only present if the CRC is less than 15 bits
-   -- long.
-   -- The idea is that when the CRC high- or low-order parts are zero
-   -- (which would collide with EOF) we can use the extra bit to mitigate
-   -- the situation.
-   -- Due to the affine property of the CRC : CRC(a^b) = CRC(a)^CRC(b)
-   -- setting the extra bit and XORing the CRC with that bit's CRC
-   -- yields a valid CRC again.
-   -- The CRC of the trailing extra bit is simply the polynomial itself.
-   -- Because the lowest order (x^0) of the polynomial is aligned with
-   -- the leftmost bit in the 'crc-low-order-byte' it is immediately clear
-   -- that when the crc-low-order-byte is initially 0x00 (EOF) then setting
-   -- the extra bit and XORing the CRC with the polynomial results in
-   -- a non-zero crc-low-order-byte AND a non-zero second-to-last byte
-   -- as well (because the extra bit is set).
-   --
-   -- Thus, we only have to look more carefully at the case when the
-   -- crc-high-order bits are are zero. If we flip the extra bit and
-   -- XOR the CRC with the polynomial then the crc-low-order byte may
-   -- become zero as a result of this XOR operation.
-   -- However, there is only one single possibility when this can happen
-   --  1. all crc-high-order bits are zero
-   --  2. the crc-low-order-byte matches the low-order byte of the polynomial
-   -- Because these two conditions cover all the bits of the CRC this
-   -- means that only one well-defined value needs to be handled as
-   -- a corner case.
-   -- 
-   -- After XORing the corner-case with the guard bit and the polynomial
-   --  1. the crc-hight-order bits match the polynomial low order bits
-   --  2. the crc-low-order-byte is zero.
-   -- Because in all other cases extra == '1' implies that at least one of
-   -- the CRC parts are zero (before XOR with the polynomial) the special
-   -- value may encoded to anything matching
-   --
-   --    extra == '1' AND (CRC XOR POLY)_upper != 0 AND (CRC XOR POLY)_lower != 0
-   --                 AND (CRC)_upper          != 0 AND (CRC)_lower          != 0
-   --
-   -- We can encode the special case so that the CRC has just one bit set; i.e.,
-   -- we chose a MAGIC value so that, e.g., crc(MAGIC) = 0x4000 which simplifies
-   -- the decoder.
-   -- 
-   -- For the polynomial 0x5830 the magic value 0xf4a produces a CRC of 0x4000.
-   -- This needs to be XORed with the high-order bits of the polynomial.
-   -- Since low-order byte of the magical value 
-   -- half the final CRC does meet the condition for the magical value.
-   constant CRC_INIT_LE_C : std_logic_vector(CRC_POLY_LE_C'range) := (others => '1');
-   constant CRC_INIT_BE_C : std_logic_vector(CRC_POLY_BE_C'range) := (others => '1');
-   -- magic value to be XORed into the corner-case crc
-   constant MAGIC_LE_C    : std_logic_vector(CRC_POLY_LE_C'range) := ("000" & x"f4a");
-   constant MAGIC_BE_C    : std_logic_vector(CRC_POLY_BE_C'range) := ("010100101111000");
-
-   function CRC_OK_LE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_LE_C'range))
-   return boolean;
-
-   function CRC_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_BE_C'range))
-   return boolean;
 
    subtype RelLnkSeqNo     is unsigned(1 downto 0);
    -- extended sequence number
@@ -149,18 +71,6 @@ package RelLnkPkg is
 end package RelLnkPkg;
 
 package body RelLnkPkg is
-
-   function CRC_OK_LE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_LE_C'range))
-   return boolean is
-   begin
-      return ((not crc(crc'left) or g) = '1') and (unsigned(crc(crc'left - 1 downto 0)) = 0);
-   end function CRC_OK_LE_F;
-
-   function CRC_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC_POLY_BE_C'range))
-   return boolean is
-   begin
-      return ((not crc(0) or g) = '1') and (unsigned(crc(crc'left downto 1)) = 0);
-   end function CRC_OK_BE_F;
 
    function mkHdr1(constant req : RelLnkSeqNoExt; constant ack : RelLnkSeqNoExt; constant typ : RelLnkMsgTyp)
    return std_logic_vector is
@@ -223,4 +133,3 @@ package body RelLnkPkg is
    end function hdrGetMsgTyp;
 
 end package body RelLnkPkg;
-

@@ -29,7 +29,7 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 use     work.CrcPkg.all;
-use     work.RelLnkPkg.all;
+use     work.CobsCrcPkg.all;
 
 entity CobsCrcCheck is
    generic (
@@ -57,7 +57,7 @@ end entity CobsCrcCheck;
 
 architecture rtl of CobsCrcCheck is
 
-   constant CRC_N_BYTES_C : natural := 2;
+   constant CRC15_N_BYTES_C : natural := 2;
 
    signal   fifoFull    : std_logic;
    signal   fifoEmpty   : std_logic;
@@ -108,27 +108,27 @@ architecture rtl of CobsCrcCheck is
       state             : StateType;
       cmPtr             : signed(LD_FIFO_DEPTH_G     downto 0);
       msgLength         : signed(LD_FIFO_DEPTH_G + 1 downto 0);
-      cobsCnt           : Uns8Array(0 to CRC_N_BYTES_C);
+      cobsCnt           : Uns8Array(0 to CRC15_N_BYTES_C);
       -- delay incoming data so that we can strip the CRC
       -- msbit serves as a 'valid' flag
-      crc               : std_logic_vector(CRC_POLY_LE_C'range);
-      crcDiscard        : Slv9Array(0 to CRC_N_BYTES_C - 1);
+      crc               : std_logic_vector(CRC15_POLY_LE_C'range);
+      crcDiscard        : Slv9Array(0 to CRC15_N_BYTES_C - 1);
    end record RegType;
 
    constant REG_INIT_C  : RegType := (
       state             => RUN,
       cmPtr             => (others => '0'),
-      msgLength         => to_signed((2**LD_FIFO_DEPTH_G) + CRC_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2),
+      msgLength         => to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2),
       cobsCnt           => (others => (others => '0')),
-      crc               => CRC_INIT_LE_C,
+      crc               => CRC15_INIT_LE_C,
       crcDiscard        => (others => (others => '0'))
    );
 
    procedure restart(variable s : inout RegType) is
    begin
       s           := s;
-      s.crc       := CRC_INIT_LE_C;
-      s.msgLength := to_signed((2**LD_FIFO_DEPTH_G) + CRC_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2);
+      s.crc       := CRC15_INIT_LE_C;
+      s.msgLength := to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2);
       if ( COBS_CHECK_EN_G ) then
          s.cobsCnt(s.cobsCnt'high) := (others => '0');
          -- oldest count must be valid (=0); back-to-back 0x00
@@ -182,7 +182,7 @@ begin
                elsif ( rdyInpLoc = '1' ) then
                   setValid(v.crcDiscard(v.crcDiscard'high), '1');
                   setData (v.crcDiscard(v.crcDiscard'high), datInp);
-                  v.crc                           := CrcWrdWiseLE(CRC_POLY_LE_C, r.crc, datInp);
+                  v.crc                           := CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, datInp);
                   v.msgLength                     := r.msgLength - 1;
                   if ( COBS_CHECK_EN_G ) then
                      for i in r.cobsCnt'low to r.cobsCnt'high - 1 loop
@@ -196,7 +196,7 @@ begin
                   end if;
                   if ( COBS_EOF_G = datInp ) then
                      if (     isGuardValid(r.crcDiscard)
-                          and CRC_OK_LE_F(getGuardBit(r.crcDiscard), r.crc)
+                          and CRC15_OK_LE_F(getGuardBit(r.crcDiscard), r.crc)
                           and (not COBS_CHECK_EN_G or r.cobsCnt(0) = 0)
                         ) then
                         fifoWrEna  <= '1';

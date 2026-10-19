@@ -29,7 +29,7 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 use     work.CrcPkg.all;
-use     work.RelLnkPkg.all;
+use     work.CobsCrcPkg.all;
 
 entity CobsCrcCheckTb is
 end entity CobsCrcCheckTb;

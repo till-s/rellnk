@@ -29,7 +29,7 @@ use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
 use     work.CrcPkg.all;
-use     work.RelLnkPkg.all;
+use     work.CobsCrcPkg.all;
 
 entity CobsCrcGenTb is
 end entity CobsCrcGenTb;
@@ -50,7 +50,7 @@ architecture rtl of CobsCrcGenTb is
    signal datChk             : std_logic_vector(7 downto 0);
    signal vldChk             : std_logic;
 
-   signal crcOut             : std_logic_vector(CRC_POLY_LE_C'range) := CRC_INIT_LE_C;
+   signal crcOut             : std_logic_vector(CRC15_POLY_LE_C'range) := CRC15_INIT_LE_C;
    signal guard              : std_logic_vector(1 downto 0);
 
    type Slv8Array is array (natural range <>) of std_logic_vector(7 downto 0);
@@ -118,16 +118,16 @@ begin
             if ( phase = 1 ) then
                len    <= len + 1;
                guard  <= datOut(0) & guard(guard'left downto 1);
-               crcOut <= CrcWrdWiseLE(CRC_POLY_LE_C, crcOut, datOut);
+               crcOut <= CrcWrdWiseLE(CRC15_POLY_LE_C, crcOut, datOut);
            end if;
             if ( datOut = x"00" ) then
                if ( phase = 1 ) then
                   assert len    = 4 report "unexpected output length" severity failure;
-                  assert CRC_OK_LE_F(guard(0), crcOut) report "unexpected CRC" severity failure;
+                  assert CRC15_OK_LE_F(guard(0), crcOut) report "unexpected CRC" severity failure;
                end if;
                len    <= 0;
                seen   <= seen + 1;
-               crcOut <= CRC_INIT_LE_C;
+               crcOut <= CRC15_INIT_LE_C;
             end if;
          end if;
          if ( phase = 0 and vldInp = '0' and idx = 0 ) then

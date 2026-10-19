@@ -20,12 +20,12 @@ $(PROGS):%Tb: %Tb.o
 clean:
 	$(RM) *.o work-*.cf $(PROGS) dump.ghw
 
-CobsCrcCheckTb.o: RelLnkPkg.o CobsCrcCheck.o CobsCrcGen.o
-CobsCrcGenTb.o: RelLnkPkg.o CobsCrcCheck.o CobsCrcGen.o
+CobsCrcCheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcCheck.o CobsCrcGen.o
+CobsCrcGenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcCheck.o CobsCrcGen.o
 
-CobsCrcCheck.o: RelLnkPkg.o CrcPkg.o RelLnkFifo.o
+CobsCrcCheck.o: CobsCrcPkg.o CrcPkg.o RelLnkFifo.o
 
-CobsCrcGen.o: RelLnkPkg.o CrcPkg.o
+CobsCrcGen.o: CobsCrcPkg.o CrcPkg.o
 
 RelLnk.o: RelLnkPkg.o RelLnkFifo.o
 
