@@ -31,7 +31,7 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.CobsCrcPkg.all;
 
-entity CobsCrcCheck is
+entity CobsCrc15Check is
    generic (
       LD_FIFO_DEPTH_G : natural;
       COBS_EOF_G      : std_logic_vector( 7 downto 0) := x"00";
@@ -53,9 +53,9 @@ entity CobsCrcCheck is
       -- disgnostics
       dropping        : out std_logic
    );
-end entity CobsCrcCheck;
+end entity CobsCrc15Check;
 
-architecture rtl of CobsCrcCheck is
+architecture rtl of CobsCrc15Check is
 
    constant CRC15_N_BYTES_C : natural := 2;
 

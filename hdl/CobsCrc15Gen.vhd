@@ -37,7 +37,7 @@ use     work.CobsCrcPkg.all;
 -- A guard bit is used to ensure the CRC does not have
 -- null/EOF bytes.
 
-entity CobsCrcGen is
+entity CobsCrc15Gen is
    generic (
       COBS_EOF_G     : std_logic_vector(7 downto 0) := x"00"
    );
@@ -52,9 +52,9 @@ entity CobsCrcGen is
       vldOut         : out std_logic;
       rdyOut         : in  std_logic
    );
-end entity CobsCrcGen;
+end entity CobsCrc15Gen;
 
-architecture rtl of CobsCrcGen is
+architecture rtl of CobsCrc15Gen is
 
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms
