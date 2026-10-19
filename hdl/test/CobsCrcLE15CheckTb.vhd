@@ -219,7 +219,7 @@ begin
    end process P_FEED;
 
 
-   U_DUT_GEN : entity work.CobsCrcLE15Gen
+   U_DUT_GEN : entity work.CobsCrcLE15_22Gen
       port map (
          clk    => clk,
          rst    => rst,
@@ -231,7 +231,7 @@ begin
          rdyOut => rdyOut
       );
 
-   U_DUT_CHK : entity work.CobsCrcLE15Check
+   U_DUT_CHK : entity work.CobsCrcLE15_22Check
       generic map (
          LD_FIFO_DEPTH_G => 3,
          COBS_CHECK_EN_G => true

@@ -104,19 +104,28 @@ package CobsCrcPkg is
    constant MAGIC15_LE_C    : std_logic_vector(CRC15_POLY_LE_C'range) := ("000" & x"f4a");
    constant MAGIC15_BE_C    : std_logic_vector(CRC15_POLY_BE_C'range) := ("010100101111000");
 
-   function CRC15_OK_LE_F(
+   function CRC_OK_LE_F(
       constant g   : std_logic;
-      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
-      constant inv : boolean -- sender inverted CRC
+      constant crc : std_logic_vector;
+      constant cmp : std_logic_vector
    )
    return boolean;
 
-   function CRC15_OK_BE_F(
+   function CRC_OK_BE_F(
       constant g   : std_logic;
-      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
-      constant inv : boolean -- sender inverted CRC
+      constant crc : std_logic_vector;
+      constant cmp : std_logic_vector
    )
    return boolean;
+
+   function CobsCrcLE15_22Acceptable(constant POLY : std_logic_vector)
+   return boolean;
+
+   function CobsCrc15_22UsrBits(constant POLY : std_logic_vector)
+   return natural;
+
+   function CobsCrc15_22GuardBits(constant POLY : std_logic_vector)
+   return natural;
 
 end package CobsCrcPkg;
 
@@ -128,26 +137,86 @@ package body CobsCrcPkg is
       if ( c ) then return t; else return f; end if;
    end function ite;
 
-   function CRC15_OK_LE_F(
+   function CRC_OK_LE_F(
       constant g   : std_logic;
-      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
-      constant inv : boolean -- sender inverted CRC
+      constant crc : std_logic_vector;
+      constant cmp : std_logic_vector
    )
    return boolean is
-      constant ZER_C : std_logic_vector(crc'range) := (others => '0');
-      constant CMP_C : std_logic_vector(crc'range) := ite(inv, CRC15_INIT_LE_C, ZER_C);
    begin
-      return ((crc(crc'left) = CMP_C(CMP_C'left)) or (g = '1')) and (crc(crc'left - 1 downto 0) = CMP_C(crc'left - 1 downto 0));
-   end function CRC15_OK_LE_F;
+      if ( crc'length = 15 ) then
+         return ((crc(crc'left) = cmp(cmp'left)) or (g = '1')) and (crc(crc'left - 1 downto 0) = cmp(crc'left - 1 downto 0));
+      else
+         return crc = cmp;
+      end if;
+   end function CRC_OK_LE_F;
 
-   function CRC15_OK_BE_F(
+   function CRC_OK_BE_F(
       constant g   : std_logic;
-      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
-      constant inv : boolean -- sender inverted CRC
+      constant crc : std_logic_vector;
+      constant cmp : std_logic_vector
    )
    return boolean is
    begin
-      return ((not crc(0) or g) = '1') and (unsigned(crc(crc'left downto 1)) = 0);
-   end function CRC15_OK_BE_F;
+      if ( crc'length = 15 ) then
+         return ((crc(0) = cmp(0)) or (g = '1')) and (crc(crc'left downto 1) = cmp(crc'left downto 1));
+      else
+         return crc = cmp;
+      end if;
+   end function CRC_OK_BE_F;
+
+   function lhsBytesNonZero(constant P: std_logic_vector)
+   return boolean is
+   begin
+      return P(P'left downto P'left - 7) /= x"00" and P(P'left - 8 downto P'left - 15) /= x"00";
+   end function lhsBytesNonZero;
+
+   function CobsCrcLE15_22Acceptable(constant POLY : std_logic_vector)
+   return boolean is
+      -- right shifted POLY (alt-guard bit)
+      constant POLY_R : std_logic_vector(POLY'range) := '0' & POLY(POLY'left downto 1);
+      -- XOR of both variants
+      constant POLY_X : std_logic_vector(POLY'range) := POLY_R xor POLY;
+   begin
+      if ( POLY'left = 14 and POLY'right = 0 ) then
+	 -- 'left' byte can never be zero
+	 return true;
+      end if;
+      if ( POLY'right /= 0 or POLY'left > 21 or POLY'left < 15 ) then
+         report "POLY must have range 21..14 downto 0";
+         return false;
+      end if;
+      if ( not lhsBytesNonZero(POLY) ) then
+         report "leftmost two bytes of POLY must each be nonzero";
+         return false;
+      end if;
+      if ( not lhsBytesNonZero(POLY_R) ) then
+         report "leftmost two bytes of POLY right-shifted by 1 bit must each be nonzero";
+         return false;
+      end if;
+      if ( not lhsBytesNonZero(POLY_X) ) then
+         report "leftmost two bytes of POLY XOR shift_right(POLY,1) must each be nonzero";
+         return false;
+      end if;
+      return true;
+   end function CobsCrcLE15_22Acceptable;
+
+   function CobsCrc15_22UsrBits(constant POLY : std_logic_vector)
+   return natural is
+   begin
+      if ( POLY'length = 15 ) then
+         return 0;
+      end if;
+      return 22 - POLY'length;
+   end function CobsCrc15_22UsrBits;
+
+   function CobsCrc15_22GuardBits(constant POLY : std_logic_vector)
+   return natural is
+   begin
+      if ( POLY'length = 15 ) then
+         return 1;
+      end if;
+      return 2;
+   end function CobsCrc15_22GuardBits;
 
 end package body CobsCrcPkg;

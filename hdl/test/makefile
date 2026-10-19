@@ -19,12 +19,12 @@ $(PROGS):%Tb: %Tb.o
 clean:
 	$(RM) *.o work-*.cf $(PROGS) dump.ghw
 
-CobsCrcLE15CheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15Check.o CobsCrcLE15Gen.o
-CobsCrcLE15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15Check.o CobsCrcLE15Gen.o
+CobsCrcLE15CheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15_22Check.o CobsCrcLE15_22Gen.o
+CobsCrcLE15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15_22Check.o CobsCrcLE15_22Gen.o
 
-CobsCrcLE15Check.o: CobsCrcPkg.o CrcPkg.o PktUtilFifo.o
+CobsCrcLE15_22Check.o: CobsCrcPkg.o CrcPkg.o PktUtilFifo.o
 
-CobsCrcLE15Gen.o: CobsCrcPkg.o CrcPkg.o
+CobsCrcLE15_22Gen.o: CobsCrcPkg.o CrcPkg.o
 
 CobsCrcPkg.o: CrcPkg.o
 

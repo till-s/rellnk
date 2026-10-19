@@ -31,13 +31,13 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.CobsCrcPkg.all;
 
-entity CobsCrcLE15Check is
+entity CobsCrcLE15_22Check is
    generic (
-      POLY_G          : std_logic_vector(14 downto 0) := CRC15_POLY_LE_C;
+      POLY_G          : std_logic_vector := CRC15_POLY_LE_C;
       -- initial value ('leading-zeroes' detection)
-      CRC_INIT_G      : std_logic_vector(14 downto 0) := CRC15_INIT_LE_C;
-      -- whether to sender inverted CRC ('trailing-zeroes' detection)
-      CRC_INVERT_G    : boolean                       := true;
+      CRC_INIT_G      : std_logic_vector := CRC15_INIT_LE_C;
+      -- whether the sender inverted the CRC ('trailing-zeroes' detection)
+      CRC_INVERTED_G  : boolean                       := true;
       LD_FIFO_DEPTH_G : natural;
       COBS_EOF_G      : std_logic_vector( 7 downto 0) := x"00";
       COBS_CHECK_EN_G : boolean := true;
@@ -53,16 +53,17 @@ entity CobsCrcLE15Check is
 
       datOut          : out std_logic_vector(7 downto 0);
       vldOut          : out std_logic;
+      usrOut          : out std_logic_vector(CobsCrc15_22UsrBits(POLY_G) - 1 downto 0);
       rdyOut          : in  std_logic;
 
       -- disgnostics
       dropping        : out std_logic
    );
-end entity CobsCrcLE15Check;
+end entity CobsCrcLE15_22Check;
 
-architecture rtl of CobsCrcLE15Check is
+architecture rtl of CobsCrcLE15_22Check is
 
-   constant CRC15_N_BYTES_C : natural := 2;
+   constant CRC_N_BYTES_C : natural := (POLY_G'length + 7)/8;
 
    signal   fifoFull    : std_logic;
    signal   fifoEmpty   : std_logic;
@@ -76,6 +77,17 @@ architecture rtl of CobsCrcLE15Check is
    type     StateType   is (RUN, DROP);
    type     Slv9Array   is array (natural range <>) of std_logic_vector(8 downto 0);
    type     Uns8Array   is array (natural range <>) of unsigned(7 downto 0);
+
+   function CRC_CMP_F return std_logic_vector is
+      constant ZER_C : std_logic_vector(CRC_INIT_G'range) := (others => '0');
+      constant ONE_C : std_logic_vector(CRC_INIT_G'range) := (others => '1');
+   begin
+      if ( CRC_INVERTED_G ) then
+         return CrcBitWiseLE(POLY_G, ONE_C);
+      else
+         return ZER_C;
+      end if;
+   end function CRC_CMP_F;
 
    function getValid(constant x : std_logic_vector(8 downto 0)) return std_logic is
    begin
@@ -109,23 +121,30 @@ architecture rtl of CobsCrcLE15Check is
       return getData(x(0))(0);
    end function getGuardBit;
 
+   function getUsrBits(constant x : Slv9Array) return std_logic_vector is
+   begin
+      return getData(x(0))(CobsCrc15_22UsrBits(POLY_G) - 1 downto 0);
+   end function getUsrBits;
+
    type     RegType     is record
       state             : StateType;
       cmPtr             : signed(LD_FIFO_DEPTH_G     downto 0);
       msgLength         : signed(LD_FIFO_DEPTH_G + 1 downto 0);
-      cobsCnt           : Uns8Array(0 to CRC15_N_BYTES_C);
+      cobsCnt           : Uns8Array(0 to CRC_N_BYTES_C);
       -- delay incoming data so that we can strip the CRC
       -- msbit serves as a 'valid' flag
       crc               : std_logic_vector(POLY_G'range);
-      crcDiscard        : Slv9Array(0 to CRC15_N_BYTES_C - 1);
+      usr               : std_logic_vector(usrOut'range);
+      crcDiscard        : Slv9Array(0 to CRC_N_BYTES_C - 1);
    end record RegType;
 
    constant REG_INIT_C  : RegType := (
       state             => RUN,
       cmPtr             => (others => '0'),
-      msgLength         => to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2),
+      msgLength         => to_signed((2**LD_FIFO_DEPTH_G) + CRC_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2),
       cobsCnt           => (others => (others => '0')),
       crc               => CRC_INIT_G,
+      usr               => (others => '0'),
       crcDiscard        => (others => (others => '0'))
    );
 
@@ -133,7 +152,7 @@ architecture rtl of CobsCrcLE15Check is
    begin
       s           := s;
       s.crc       := CRC_INIT_G;
-      s.msgLength := to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2);
+      s.msgLength := to_signed((2**LD_FIFO_DEPTH_G) + CRC_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2);
       if ( COBS_CHECK_EN_G ) then
          s.cobsCnt(s.cobsCnt'high) := (others => '0');
          -- oldest count must be valid (=0); back-to-back 0x00
@@ -153,6 +172,14 @@ architecture rtl of CobsCrcLE15Check is
    signal   rin         : RegType;
 
 begin
+
+   assert POLY_G'left = CRC_INIT_G'left and POLY_G'right = CRC_INIT_G'right
+      report "Mismatch between polynomial and initial value ranges"
+      severity failure;
+
+   assert CobsCrcLE15_22Acceptable(POLY_G)
+      report "CRC Polynomial not acceptable"
+      severity failure;
 
    P_COMB : process ( r, datInp, vldInp, fifoFull, fifoWrPtr ) is
       variable v         : RegType;
@@ -200,8 +227,9 @@ begin
                      end if;
                   end if;
                   if ( COBS_EOF_G = datInp ) then
+                     v.usr := getUsrBits(r.crcDiscard);
                      if (     isGuardValid(r.crcDiscard)
-                          and CRC15_OK_LE_F(getGuardBit(r.crcDiscard), r.crc, CRC_INVERT_G)
+                          and CRC_OK_LE_F(getGuardBit(r.crcDiscard), r.crc, CRC_CMP_F)
                           and (not COBS_CHECK_EN_G or r.cobsCnt(0) = 0)
                         ) then
                         fifoWrEna  <= '1';
@@ -274,7 +302,7 @@ begin
    vldOut    <= not fifoEmpty;
    fifoRdEna <= rdyOut and not fifoEmpty;
    dropping  <= fifoWrUndo;
-
+   usrOut    <= r.usr;
 
 end architecture rtl;
 
