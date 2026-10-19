@@ -9,6 +9,8 @@ all: $(PROGS)
 
 test: $(PROGS)
 	true $(addprefix && ./,$^)
+	@echo "Testing with 16-bit polynomial"
+	./CobsCrcLE15GenTb -gPOLY_G=49154
 
 %.o: %.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
