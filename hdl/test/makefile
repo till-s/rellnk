@@ -3,7 +3,7 @@ GHDLFLAGS=-fsynopsys
 
 VPATH=../
 
-PROGS=CobsCrc15GenTb CobsCrc15CheckTb RelLnkTb RelLnkRndTb
+PROGS=CobsCrcLE15GenTb CobsCrcLE15CheckTb RelLnkTb RelLnkRndTb
 
 all: $(PROGS)
 
@@ -19,12 +19,12 @@ $(PROGS):%Tb: %Tb.o
 clean:
 	$(RM) *.o work-*.cf $(PROGS) dump.ghw
 
-CobsCrc15CheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrc15Check.o CobsCrc15Gen.o
-CobsCrc15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrc15Check.o CobsCrc15Gen.o
+CobsCrcLE15CheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15Check.o CobsCrcLE15Gen.o
+CobsCrcLE15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15Check.o CobsCrcLE15Gen.o
 
-CobsCrc15Check.o: CobsCrcPkg.o CrcPkg.o PktUtilFifo.o
+CobsCrcLE15Check.o: CobsCrcPkg.o CrcPkg.o PktUtilFifo.o
 
-CobsCrc15Gen.o: CobsCrcPkg.o CrcPkg.o
+CobsCrcLE15Gen.o: CobsCrcPkg.o CrcPkg.o
 
 CobsCrcPkg.o: CrcPkg.o
 

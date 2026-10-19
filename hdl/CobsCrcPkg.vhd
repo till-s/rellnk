@@ -104,23 +104,47 @@ package CobsCrcPkg is
    constant MAGIC15_LE_C    : std_logic_vector(CRC15_POLY_LE_C'range) := ("000" & x"f4a");
    constant MAGIC15_BE_C    : std_logic_vector(CRC15_POLY_BE_C'range) := ("010100101111000");
 
-   function CRC15_OK_LE_F(constant g : std_logic; constant crc : std_logic_vector(CRC15_POLY_LE_C'range))
+   function CRC15_OK_LE_F(
+      constant g   : std_logic;
+      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
+      constant inv : boolean -- sender inverted CRC
+   )
    return boolean;
 
-   function CRC15_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC15_POLY_BE_C'range))
+   function CRC15_OK_BE_F(
+      constant g   : std_logic;
+      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
+      constant inv : boolean -- sender inverted CRC
+   )
    return boolean;
 
 end package CobsCrcPkg;
 
 package body CobsCrcPkg is
 
-   function CRC15_OK_LE_F(constant g : std_logic; constant crc : std_logic_vector(CRC15_POLY_LE_C'range))
-   return boolean is
+   function ite(constant c : boolean; constant t,f: std_logic_vector)
+   return std_logic_vector is
    begin
-      return ((not crc(crc'left) or g) = '1') and (unsigned(crc(crc'left - 1 downto 0)) = 0);
+      if ( c ) then return t; else return f; end if;
+   end function ite;
+
+   function CRC15_OK_LE_F(
+      constant g   : std_logic;
+      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
+      constant inv : boolean -- sender inverted CRC
+   )
+   return boolean is
+      constant ZER_C : std_logic_vector(crc'range) := (others => '0');
+      constant CMP_C : std_logic_vector(crc'range) := ite(inv, CRC15_INIT_LE_C, ZER_C);
+   begin
+      return ((crc(crc'left) = CMP_C(CMP_C'left)) or (g = '1')) and (crc(crc'left - 1 downto 0) = CMP_C(crc'left - 1 downto 0));
    end function CRC15_OK_LE_F;
 
-   function CRC15_OK_BE_F(constant g : std_logic; constant crc : std_logic_vector(CRC15_POLY_BE_C'range))
+   function CRC15_OK_BE_F(
+      constant g   : std_logic;
+      constant crc : std_logic_vector(CRC15_POLY_LE_C'range);
+      constant inv : boolean -- sender inverted CRC
+   )
    return boolean is
    begin
       return ((not crc(0) or g) = '1') and (unsigned(crc(crc'left downto 1)) = 0);

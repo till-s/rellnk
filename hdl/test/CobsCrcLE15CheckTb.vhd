@@ -31,10 +31,10 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.CobsCrcPkg.all;
 
-entity CobsCrc15CheckTb is
-end entity CobsCrc15CheckTb;
+entity CobsCrcLE15CheckTb is
+end entity CobsCrcLE15CheckTb;
 
-architecture rtl of CobsCrc15CheckTb is
+architecture rtl of CobsCrcLE15CheckTb is
 
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
@@ -219,7 +219,7 @@ begin
    end process P_FEED;
 
 
-   U_DUT_GEN : entity work.CobsCrc15Gen
+   U_DUT_GEN : entity work.CobsCrcLE15Gen
       port map (
          clk    => clk,
          rst    => rst,
@@ -231,7 +231,7 @@ begin
          rdyOut => rdyOut
       );
 
-   U_DUT_CHK : entity work.CobsCrc15Check
+   U_DUT_CHK : entity work.CobsCrcLE15Check
       generic map (
          LD_FIFO_DEPTH_G => 3,
          COBS_CHECK_EN_G => true

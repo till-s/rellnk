@@ -37,7 +37,7 @@ use     work.CobsCrcPkg.all;
 -- A guard bit is used to ensure the CRC does not have
 -- null/EOF bytes.
 
-entity CobsCrc15Gen is
+entity CobsCrcLE15Gen is
    generic (
       COBS_EOF_G     : std_logic_vector(7 downto 0) := x"00"
    );
@@ -52,9 +52,9 @@ entity CobsCrc15Gen is
       vldOut         : out std_logic;
       rdyOut         : in  std_logic
    );
-end entity CobsCrc15Gen;
+end entity CobsCrcLE15Gen;
 
-architecture rtl of CobsCrc15Gen is
+architecture rtl of CobsCrcLE15Gen is
 
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms
@@ -99,7 +99,8 @@ begin
                   vldOut  <= '0';
                   v.state := FIX_CRC;
                   -- EOF does not go into CRC but add the guard bit ('0' for now)
-                  v.crc   := CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, BIT_ZERO_C);
+		  -- also: invert CRC (standard way to detect trailing zeros)
+                  v.crc   := not CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, BIT_ZERO_C);
                end if;
             end if;
 

@@ -31,10 +31,10 @@ use     ieee.numeric_std.all;
 use     work.CrcPkg.all;
 use     work.CobsCrcPkg.all;
 
-entity CobsCrc15GenTb is
-end entity CobsCrc15GenTb;
+entity CobsCrcLE15GenTb is
+end entity CobsCrcLE15GenTb;
 
-architecture rtl of CobsCrc15GenTb is
+architecture rtl of CobsCrcLE15GenTb is
 
    signal clk                : std_logic := '0';
    signal rst                : std_logic := '0';
@@ -123,7 +123,7 @@ begin
             if ( datOut = x"00" ) then
                if ( phase = 1 ) then
                   assert len    = 4 report "unexpected output length" severity failure;
-                  assert CRC15_OK_LE_F(guard(0), crcOut) report "unexpected CRC" severity failure;
+                  assert CRC15_OK_LE_F(guard(0), crcOut, true) report "unexpected CRC" severity failure;
                end if;
                len    <= 0;
                seen   <= seen + 1;
@@ -197,7 +197,7 @@ begin
 
    datInp <= FEED_C(idx) when phase = 0 else feed(idx);
 
-   U_DUT_GEN : entity work.CobsCrc15Gen
+   U_DUT_GEN : entity work.CobsCrcLE15Gen
       port map (
          clk    => clk,
          rst    => rst,
@@ -209,7 +209,7 @@ begin
          rdyOut => rdyOut
       );
 
-   U_DUT_CHK : entity work.CobsCrc15Check
+   U_DUT_CHK : entity work.CobsCrcLE15Check
       generic map (
          LD_FIFO_DEPTH_G => 2,
          COBS_CHECK_EN_G => false
