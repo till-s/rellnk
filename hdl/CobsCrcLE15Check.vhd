@@ -33,6 +33,11 @@ use     work.CobsCrcPkg.all;
 
 entity CobsCrcLE15Check is
    generic (
+      POLY_G          : std_logic_vector(14 downto 0) := CRC15_POLY_LE_C;
+      -- initial value ('leading-zeroes' detection)
+      CRC_INIT_G      : std_logic_vector(14 downto 0) := CRC15_INIT_LE_C;
+      -- whether to sender inverted CRC ('trailing-zeroes' detection)
+      CRC_INVERT_G    : boolean                       := true;
       LD_FIFO_DEPTH_G : natural;
       COBS_EOF_G      : std_logic_vector( 7 downto 0) := x"00";
       COBS_CHECK_EN_G : boolean := true;
@@ -111,7 +116,7 @@ architecture rtl of CobsCrcLE15Check is
       cobsCnt           : Uns8Array(0 to CRC15_N_BYTES_C);
       -- delay incoming data so that we can strip the CRC
       -- msbit serves as a 'valid' flag
-      crc               : std_logic_vector(CRC15_POLY_LE_C'range);
+      crc               : std_logic_vector(POLY_G'range);
       crcDiscard        : Slv9Array(0 to CRC15_N_BYTES_C - 1);
    end record RegType;
 
@@ -120,14 +125,14 @@ architecture rtl of CobsCrcLE15Check is
       cmPtr             => (others => '0'),
       msgLength         => to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2),
       cobsCnt           => (others => (others => '0')),
-      crc               => CRC15_INIT_LE_C,
+      crc               => CRC_INIT_G,
       crcDiscard        => (others => (others => '0'))
    );
 
    procedure restart(variable s : inout RegType) is
    begin
       s           := s;
-      s.crc       := CRC15_INIT_LE_C;
+      s.crc       := CRC_INIT_G;
       s.msgLength := to_signed((2**LD_FIFO_DEPTH_G) + CRC15_N_BYTES_C - 1, LD_FIFO_DEPTH_G + 2);
       if ( COBS_CHECK_EN_G ) then
          s.cobsCnt(s.cobsCnt'high) := (others => '0');
@@ -182,7 +187,7 @@ begin
                elsif ( rdyInpLoc = '1' ) then
                   setValid(v.crcDiscard(v.crcDiscard'high), '1');
                   setData (v.crcDiscard(v.crcDiscard'high), datInp);
-                  v.crc                           := CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, datInp);
+                  v.crc                           := CrcWrdWiseLE(POLY_G, r.crc, datInp);
                   v.msgLength                     := r.msgLength - 1;
                   if ( COBS_CHECK_EN_G ) then
                      for i in r.cobsCnt'low to r.cobsCnt'high - 1 loop
@@ -196,7 +201,7 @@ begin
                   end if;
                   if ( COBS_EOF_G = datInp ) then
                      if (     isGuardValid(r.crcDiscard)
-                          and CRC15_OK_LE_F(getGuardBit(r.crcDiscard), r.crc, true)
+                          and CRC15_OK_LE_F(getGuardBit(r.crcDiscard), r.crc, CRC_INVERT_G)
                           and (not COBS_CHECK_EN_G or r.cobsCnt(0) = 0)
                         ) then
                         fifoWrEna  <= '1';

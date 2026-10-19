@@ -39,7 +39,15 @@ use     work.CobsCrcPkg.all;
 
 entity CobsCrcLE15Gen is
    generic (
-      COBS_EOF_G     : std_logic_vector(7 downto 0) := x"00"
+      POLY_G         : std_logic_vector(14 downto 0) := CRC15_POLY_LE_C;
+      -- magic value; crc(POLY_G, MAGIC_G) must yield x"4000"; see CobsCrcPkg
+      MAGIC_G        : std_logic_vector(14 downto 0) := MAGIC15_LE_C;
+      -- initial value ('leading-zeroes' detection)
+      CRC_INIT_G     : std_logic_vector(14 downto 0) := CRC15_INIT_LE_C;
+      -- whether to append inverted CRC ('trailing-zeroes' detection)
+      CRC_INVERT_G   : boolean                       := true;
+      COBS_EOF_G     : std_logic_vector(7 downto 0)  := x"00"
+
    );
    port (
       clk            : in  std_logic;
@@ -58,27 +66,36 @@ architecture rtl of CobsCrcLE15Gen is
 
    -- 'left' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'lower' order terms
-   constant P_L_C      : std_logic_vector(14 downto 7) := CRC15_POLY_LE_C(14 downto 7);
+   constant P_L_C      : std_logic_vector(14 downto 7) := POLY_G(14 downto 7);
    -- 'right' part of the polynomial; since this is little-endian these
    -- bits correspond to the 'higher' order terms
-   constant P_R_C      : std_logic_vector( 6 downto 0) := CRC15_POLY_LE_C( 6 downto 0 );
+   constant P_R_C      : std_logic_vector( 6 downto 0) := POLY_G( 6 downto 0 );
 
    type StateType is (RUN, FIX_CRC, APPEND_CRC_1, APPEND_CRC_2, APPEND_EOF);
 
    type RegType   is record
       state       : StateType;
-      crc         : std_logic_vector(CRC15_POLY_LE_C'range);
+      crc         : std_logic_vector(POLY_G'range);
       guard       : std_logic;
    end record RegType;
 
    constant REG_INIT_C : RegType := (
       state       => RUN,
-      crc         => CRC15_INIT_LE_C,
+      crc         => CRC_INIT_G,
       guard       => '0'
    );
 
    signal r       : RegType := REG_INIT_C;
    signal rin     : RegType;
+
+   function CRC_OUT(constant x : std_logic_vector) return std_logic_vector is
+   begin
+      if ( CRC_INVERT_G ) then
+         return not x;
+      else
+         return x;
+      end if;
+   end function CRC_OUT;
 
 begin
 
@@ -93,14 +110,14 @@ begin
       case ( r.state ) is
          when RUN        =>
             if ( ( vldInp and rdyOut ) = '1' ) then
-               v.crc := CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, datInp);
+               v.crc := CrcWrdWiseLE(POLY_G, r.crc, datInp);
                if ( COBS_EOF_G = datInp ) then
                   -- stop output (but consume input)
                   vldOut  <= '0';
                   v.state := FIX_CRC;
                   -- EOF does not go into CRC but add the guard bit ('0' for now)
-		  -- also: invert CRC (standard way to detect trailing zeros)
-                  v.crc   := not CrcWrdWiseLE(CRC15_POLY_LE_C, r.crc, BIT_ZERO_C);
+		  -- also: (optionally) invert CRC (standard way to detect trailing zeros)
+                  v.crc   := CRC_OUT( CrcWrdWiseLE(POLY_G, r.crc, BIT_ZERO_C) );
                end if;
             end if;
 
@@ -110,17 +127,17 @@ begin
             -- massage the guard bit
             if    ( r.crc(P_L_C'range) = COBS_EOF_G ) then
                v.guard := '1';
-               v.crc   := r.crc xor CRC15_POLY_LE_C;
+               v.crc   := r.crc xor POLY_G;
             elsif ( r.crc(P_R_C'range) = (P_R_C xor P_R_C) ) then -- (X xor X) for zero
                v.guard := '1';
-               v.crc   := r.crc xor CRC15_POLY_LE_C;
+               v.crc   := r.crc xor POLY_G;
                -- corner case where XORing the guard bit and its crc would
                -- zero out the leftmost 8 bits. Mark this by using a magic
                -- value with bits in both halves set.
                -- (both halves of the CRC AND the guard bits being
                -- nonzero cannot happen otherwise).
                if ( r.crc(P_L_C'range) = P_L_C ) then
-                  v.crc := r.crc xor CRC15_POLY_LE_C xor MAGIC15_LE_C;
+                  v.crc := r.crc xor POLY_G xor MAGIC_G;
                end if;
             end if;
             v.state := APPEND_CRC_1;
@@ -145,7 +162,7 @@ begin
             rdyInp  <= '0'; -- stop input
             vldOut  <= '1';
             datOut  <= COBS_EOF_G;
-            v.crc   := CRC15_INIT_LE_C;
+            v.crc   := CRC_INIT_G;
             v.guard := '0';
             if ( rdyOut = '1' ) then
                v.state := RUN;
