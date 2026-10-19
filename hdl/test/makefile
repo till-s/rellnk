@@ -1,5 +1,3 @@
-d:
-
 GHDL=ghdl
 GHDLFLAGS=-fsynopsys
 
