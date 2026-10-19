@@ -28,7 +28,7 @@ library ieee;
 use     ieee.std_logic_1164.all;
 use     ieee.numeric_std.all;
 
-entity RelLnkFifo is
+entity PktUtilFifo is
    generic (
       LD_FIFO_DEPTH_G : natural;
       DATA_WIDTH_G    : natural := 8
@@ -59,9 +59,9 @@ entity RelLnkFifo is
       rdPtr           : out signed(LD_FIFO_DEPTH_G downto 0);
       empty           : out std_logic
    );
-end entity RelLnkFifo;
+end entity PktUtilFifo;
 
-architecture rtl of RelLnkFifo is
+architecture rtl of PktUtilFifo is
 
    subtype SlvType  is std_logic_vector(DATA_WIDTH_G - 1 downto 0);
    type    SlvArray is array (natural range <>) of SlvType;

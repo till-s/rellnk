@@ -488,7 +488,7 @@ begin
       end if;
    end process P_SEQ;
 
-   U_REX_FIFO : entity work.RelLnkFifo
+   U_REX_FIFO : entity work.PktUtilFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_REX_FIFO_DEPTH_C,
          DATA_WIDTH_G    => rexFifoWrDat'length
@@ -514,7 +514,7 @@ begin
          empty           => rexFifoEmpty
       );
 
-   U_DAT_FIFO : entity work.RelLnkFifo
+   U_DAT_FIFO : entity work.PktUtilFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_G,
          DATA_WIDTH_G    => 8

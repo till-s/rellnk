@@ -240,7 +240,7 @@ begin
       end if;
    end process P_SEQ;
 
-   U_FIFO : entity work.RelLnkFifo
+   U_FIFO : entity work.PktUtilFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_G,
          DATA_WIDTH_G    => 8

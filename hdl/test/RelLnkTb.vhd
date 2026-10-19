@@ -181,7 +181,7 @@ begin
       signal wptr, rptr              : signed(LD_FBK_FIFO_DEPTH_C downto 0);
       signal dinp, dout              : std_logic_vector(8 downto 0);
    begin
-      U_FIFO : entity work.RelLnkFifo
+      U_FIFO : entity work.PktUtilFifo
          generic map (
             LD_FIFO_DEPTH_G => LD_FBK_FIFO_DEPTH_C,
             DATA_WIDTH_G    => dinp'length
