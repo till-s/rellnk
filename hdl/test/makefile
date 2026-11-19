@@ -8,9 +8,9 @@ PROGS=CobsCrcLE15GenTb CobsCrcLE15CheckTb RelLnkTb RelLnkRndTb
 all: $(PROGS)
 
 test: $(PROGS)
-	true $(addprefix && ./,$^)
+	@bash -e -c 'for prog in $(PROGS); do ./$$prog --ieee-asserts=disable-at-0; done'
 	@echo "Testing with 16-bit polynomial"
-	./CobsCrcLE15GenTb -gPOLY_G=49154
+	./CobsCrcLE15GenTb -gPOLY_G=49154 --ieee-asserts=disable-at-0
 
 %.o: %.vhd
 	$(GHDL) -a $(GHDLFLAGS) $<
