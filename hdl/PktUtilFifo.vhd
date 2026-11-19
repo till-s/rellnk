@@ -31,6 +31,16 @@ use     ieee.numeric_std.all;
 entity PktUtilFifo is
    generic (
       LD_FIFO_DEPTH_G : natural;
+      -- WR_UNDO_G:
+      --  - TRUE:  support wrUndo and cmPtr
+      --  - FALSE: cmPtr internally looped to wrPtr
+      -- wrPtr support is unaffected by the generic
+      WR_UNDO_G       : boolean := true;
+      -- RD_UNDO_G:
+      --  - TRUE:  support rdUndo and hlPtr
+      --  - FALSE: hlPtr internally looped to rdPtr
+      -- rdPtr support is unaffected by the generic
+      RD_UNDO_G       : boolean := true;
       DATA_WIDTH_G    : natural := 8
    );
    port (
@@ -45,14 +55,14 @@ entity PktUtilFifo is
       full            : out std_logic;
       wrPtr           : out signed(LD_FIFO_DEPTH_G downto 0);
       -- 'commit' pointer read possible up to here
-      cmPtr           : in  signed(LD_FIFO_DEPTH_G downto 0);
+      cmPtr           : in  signed(LD_FIFO_DEPTH_G downto 0) := (others => '0');
 
       -- reset read pointer to hold pointer; if 'rdUndo' is asserted
       -- concurrently with 'rdEna' the data at the previous read
       -- pointer (before reset to hlPtr) is read.
       rdUndo          : in  std_logic := '0';
       -- 'hold' pointer; write possible up to here
-      hlPtr           : in  signed(LD_FIFO_DEPTH_G downto 0);
+      hlPtr           : in  signed(LD_FIFO_DEPTH_G downto 0) := (others => '0');
       
       datOut          : out std_logic_vector(DATA_WIDTH_G - 1 downto 0);
       rdEna           : in  std_logic;
@@ -76,6 +86,9 @@ architecture rtl of PktUtilFifo is
 
    signal readDataVld       : std_logic := '0';
    signal fullLoc           : std_logic := '0';
+
+   signal hlPtrLoc          : signed(hlPtr'range);
+   signal cmPtrLoc          : signed(cmPtr'range);
 
 begin
 
@@ -105,7 +118,33 @@ begin
 
    -- since wptr and rptr are signed and 1-bit longer than LD_FIFO_DEPTH_G
    -- the wptr-rptr difference flips negative when the fifo is full
-   fullLoc <= '1' when ( wptr - hlPtr < 0 ) else '0';
+   P_FULL : process ( wptr, hlPtrLoc ) is
+   begin
+      fullLoc <= '0';
+      if ( (wptr - hlPtrLoc) < 0 ) then
+         fullLoc <= '1';
+      end if;
+   end process P_FULL;
+
+   G_RD_UNDO : if ( RD_UNDO_G ) generate
+   begin
+      hlPtrLoc <= hlPtr;
+   end generate G_RD_UNDO;
+
+   G_NO_RD_UNDO : if ( not RD_UNDO_G ) generate
+   begin
+      hlPtrLoc <= rptr;
+   end generate G_NO_RD_UNDO;
+
+   G_WR_UNDO : if ( WR_UNDO_G ) generate
+   begin
+      cmPtrLoc <= cmPtr;
+   end generate G_WR_UNDO;
+
+   G_NO_WR_UNDO : if ( not WR_UNDO_G ) generate
+   begin
+      cmPtrLoc <= wptr;
+   end generate G_NO_WR_UNDO;
 
    P_FIFO_RD : process ( clk ) is
    begin
@@ -116,7 +155,7 @@ begin
             readDataVld <= '0';
          else
             if ( memoryRen = '1' ) then
-               if ( cmPtr /= rptr ) then
+               if ( cmPtrLoc /= rptr ) then
                   readDataVld  <= '1';
                   rptr         <= rptr + 1;
                else
@@ -126,10 +165,10 @@ begin
             if ( memoryWen = '1' ) then
                wptr <= wptr + 1;
             end if;
-            if ( wrUndo    = '1' ) then
+            if ( WR_UNDO_G and (wrUndo = '1') ) then
                wptr <= cmPtr;
             end if;
-            if ( rdUndo    = '1' ) then
+            if ( RD_UNDO_G and (rdUndo = '1') ) then
                rptr        <= hlPtr;
                readDataVld <= '0';
             end if;
