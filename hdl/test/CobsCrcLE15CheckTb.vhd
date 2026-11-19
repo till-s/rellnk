@@ -173,8 +173,8 @@ begin
 
    P_CLK : process is
    begin
-      clk <= not clk;
       wait for 1 us;
+      clk <= not clk;
       if ( don ) then
          wait;
       end if;

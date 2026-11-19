@@ -108,8 +108,8 @@ begin
 
    P_CLK : process is
    begin
-      clk <= not clk;
       wait for 1 us;
+      clk <= not clk;
       if ( don ) then
          wait;
       end if;
@@ -178,12 +178,13 @@ begin
       constant LD_FBK_FIFO_DEPTH_C   : natural := 6;
       signal full, empty             : std_logic;
       signal wena, rena              : std_logic;
-      signal wptr, rptr              : signed(LD_FBK_FIFO_DEPTH_C downto 0);
       signal dinp, dout              : std_logic_vector(8 downto 0);
    begin
       U_FIFO : entity work.PktUtilFifo
          generic map (
             LD_FIFO_DEPTH_G => LD_FBK_FIFO_DEPTH_C,
+	    WR_UNDO_G       => false,
+	    RD_UNDO_G       => false,
             DATA_WIDTH_G    => dinp'length
          )
          port map (
@@ -192,10 +193,6 @@ begin
             datInp   => dinp,
             wrEna    => wena,
             full     => full,
-            wrPtr    => wptr,
-            cmPtr    => wptr,
-            rdPtr    => rptr,
-            hlPtr    => rptr,
             rdEna    => rena,
             empty    => empty,
             datOut   => dout
