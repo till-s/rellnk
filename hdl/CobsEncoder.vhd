@@ -276,9 +276,11 @@ begin
 
    -- FIFO to store data until we have counted the run-length of the
    -- next block.
-   U_FIFO : entity work.CobsFifo
+   U_FIFO : entity work.PktUtilFifo
       generic map (
          LD_FIFO_DEPTH_G => LD_DAT_FIFO_DEPTH_G,
+         WR_UNDO_G       => false,
+         RD_UNDO_G       => false,
          DATA_WIDTH_G    => 8
       )
       port map (

@@ -50,10 +50,10 @@ clean:
 
 EOFTagTb.o: EOFTag.o
 
-CobsEncoderTb.o: CobsDecoder.o CobsEncoder.o CobsFifo.o
+CobsEncoderTb.o: CobsDecoder.o CobsEncoder.o PktUtilFifo.o
 CobsDecoderTb.o: CobsDecoder.o
 CobsDecoder.o: EOFTag.o
-CobsEncoder.o: CobsFifo.o
+CobsEncoder.o: PktUtilFifo.o
 
 CobsCrcLE15CheckTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15_22Check.o CobsCrcLE15_22Gen.o
 CobsCrcLE15GenTb.o: CrcPkg.o CobsCrcPkg.o CobsCrcLE15_22Check.o CobsCrcLE15_22Gen.o

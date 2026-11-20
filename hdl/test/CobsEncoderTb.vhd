@@ -852,9 +852,11 @@ begin
          lstOut    => oLst
       );
 
-   U_RND_FIFO : entity work.CobsFifo
+   U_RND_FIFO : entity work.PktUtilFifo
       generic map (
          LD_FIFO_DEPTH_G => 9,
+         WR_UNDO_G       => false,
+         RD_UNDO_G       => false,
          DATA_WIDTH_G    => fifoDatInp'length
       )
       port map (
