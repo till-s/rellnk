@@ -1,0 +1,6 @@
+*.o
+work-*
+*Tb
+*.swo
+*.swp
+*.ghw
