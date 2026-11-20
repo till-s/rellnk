@@ -609,6 +609,8 @@ architecture sim of CobsEncoderTb is
    signal iDatRnd           : std_logic_vector(7 downto 0) := (others => '0');
    signal fifoDatOut        : std_logic_vector(8 downto 0);
 
+   signal framesOutLoc      : integer;
+
    procedure tic is
    begin
       wait until rising_edge(clk);
@@ -785,6 +787,7 @@ begin
                assert fifoDatOut = oLst & oDat report "random data/last mismatch" severity failure;
                if ( fifoDatOut(fifoDatOut'left) = '1' ) then
                   framesOut := framesOut + 1;
+                  report "Frames: " & integer'image(framesOut) & "/" & integer'image(RAND_NUM_FRAMES_C);
                   if ( framesOut = RAND_NUM_FRAMES_C ) then
                      phas <= phas - 1;
                   end if;
@@ -816,6 +819,7 @@ begin
             phas <= phas - 1;
          end if;
       end if;
+      framesOutLoc <= framesOut;
    end process P_CHECK;
 
    U_DUT_E : entity work.CobsEncoder
