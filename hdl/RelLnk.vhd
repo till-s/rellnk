@@ -136,7 +136,7 @@ architecture rtl of RelLnk is
       fifoHoldPtr       : signed(LD_FIFO_DEPTH_G downto 0);
    end record RegType;
 
-   constant TX_REG_INIT_C : RegType := (
+   constant REG_INIT_C : RegType := (
       txState           => IDLE,
       rxState           => IDLE,
       txReq             => to_unsigned(0, RelLnkSeqNoExt'length),
@@ -178,7 +178,7 @@ architecture rtl of RelLnk is
       return RelLnkSeqNoExt(x(l downto r));
    end function getReqNo;
 
-   signal   r           : RegType := TX_REG_INIT_C;
+   signal   r           : RegType := REG_INIT_C;
    signal   rin         : RegType;
 
 begin
@@ -481,7 +481,7 @@ begin
    begin
       if ( rising_edge( clk ) ) then
          if ( rst = '1' ) then
-            r <= TX_REG_INIT_C;
+            r <= REG_INIT_C;
          else
             r <= rin;
          end if;
