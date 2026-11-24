@@ -63,6 +63,7 @@ architecture rtl of CobsCrcLE15GenTb is
 
    signal datInp             : std_logic_vector(7 downto 0);
    signal vldInp             : std_logic := '0';
+   signal jamInp             : std_logic := '1';
    signal rdyInp             : std_logic;
 
    signal datOut             : std_logic_vector(7 downto 0);
@@ -141,13 +142,13 @@ begin
    begin
       if ( rising_edge( clk ) ) then
          if ( (vldOut and rdyOut) = '1' ) then
-            if ( phase = 1 ) then
+            if ( phase = 2 ) then
                len    <= len + 1;
                guard  <= datOut(0) & guard(guard'left downto 1);
                crcOut <= CrcWrdWiseLE(POLY_C, crcOut, datOut);
-           end if;
+            end if;
             if ( datOut = x"00" ) then
-               if ( phase = 1 ) then
+               if ( phase = 2 ) then
                   assert len    = feed'length - 1 + CRC_N_BYTES_C report "unexpected output length" severity failure;
                   assert CRC_OK_LE_F(guard(0), crcOut, CRC_INIT_C) report "unexpected CRC" severity failure;
                end if;
@@ -156,17 +157,20 @@ begin
                crcOut <= CRC_INIT_C;
             end if;
          end if;
-         if ( phase = 0 and vldInp = '0' and idx = 0 ) then
+         if ( (phase = 0 or phase = 1 ) and vldInp = '0' and idx = 0 ) then
             vldInp <= '1';
          end if;
          if ( (rdyInp and vldInp) = '1' ) then
-            if ( phase = 0 ) then
+            if ( phase = 0 or phase = 1 ) then
                if (idx = FEED_C'high) then
                   vldInp <= '0';
+                  if ( phase = 0 ) then
+                     jamInp <= '0';
+                  end if;
                else
                   idx    <= idx + 1;
                end if;
-            elsif ( phase = 1 ) then
+            elsif ( phase = 2 ) then
                idx <= idx + 1;
                if ( idx = feed'high ) then
                   idx <= 0;
@@ -186,14 +190,19 @@ begin
                end if;
             end if;
          end if;
-         if ( phase = 0 and seen = NEOFS ) then
+         if ( (phase = 0 or phase = 1) and seen = (phase + 1) * NEOFS ) then
            phase  <= phase + 1;
-           idx    <= 0;
+           idx    <=  0;
            vldInp <= '1';
          end if;
          if ( vldChk = '1' ) then
+            -- rxChecked counts the data cycles (incl. EOF) with valid CRC.
+            -- we run FEED_C twice, once with jamInp asserted and once w/o
+            -- 'seen' counts all EOFs coming out of the CRC generator (i.e., also
+            -- the frames with jammed CRC (=> 2*NEOFS); rxChecked counts
+            -- the data cycles out of the CRC checker (only 1*FEED_C'length)
             if ( rxChecked = FEED_C'length + K_LOOPS_C*255*255*feed'length - 1 ) then
-               assert ( seen = NEOFS + K_LOOPS_C*255*255 ) severity failure;
+               assert ( seen = 2*NEOFS + K_LOOPS_C*255*255 ) severity failure;
                don <= true;
                report "TEST PASSED";
             else
@@ -227,7 +236,7 @@ begin
    feed(2) <= std_logic_vector(to_unsigned(i, 8));
    feed(3) <= x"00";
 
-   datInp <= FEED_C(idx) when phase = 0 else feed(idx);
+   datInp <= FEED_C(idx) when (phase = 0 or phase = 1) else feed(idx);
 
    U_DUT_GEN : entity work.CobsCrcLE15_22Gen
       generic map (
@@ -239,6 +248,7 @@ begin
          rst             => rst,
          datInp          => datInp,
          vldInp          => vldInp,
+         jamInp          => jamInp,
          rdyInp          => rdyInp,
          datOut          => datOut,
          vldOut          => vldOut,
@@ -266,5 +276,3 @@ begin
 
 
 end architecture rtl;
-
-

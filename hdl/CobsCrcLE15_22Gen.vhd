@@ -55,6 +55,11 @@ entity CobsCrcLE15_22Gen is
       rst            : in  std_logic;
       datInp         : in  std_logic_vector(7 downto 0);
       vldInp         : in  std_logic;
+      -- invalidate CRC so that the receiver
+      -- considers this packet ill-formed;
+      -- may be asserted during any cycle of
+      -- the current packet (except EOF).
+      jamInp         : in  std_logic := '0';
       rdyInp         : out std_logic;
       -- user bits that are stored into the first CRC byte (after the last
       -- payload byte). Only available if the poly + 2 guard bits leave space).
@@ -95,6 +100,7 @@ architecture rtl of CobsCrcLE15_22Gen is
    type RegType   is record
       state       : StateType;
       crc         : std_logic_vector(POLY_G'range);
+      jam         : std_logic_vector(POLY_G'range);
       usr         : std_logic_vector(usrInp'range);
       guard       : std_logic_vector(CobsCrc15_22GuardBits(POLY_G) - 1 downto 0);
    end record RegType;
@@ -102,6 +108,7 @@ architecture rtl of CobsCrcLE15_22Gen is
    constant REG_INIT_C : RegType := (
       state       => RUN,
       crc         => CRC_INIT_G,
+      jam         => (others => '0'),
       usr         => (others => '0'),
       guard       => (others => '0')
    );
@@ -128,7 +135,7 @@ begin
       report "CRC Polynomial not acceptable"
       severity failure;
 
-   P_COMB : process (r, datInp, vldInp, rdyOut) is
+   P_COMB : process (r, datInp, vldInp, jamInp, rdyOut) is
       variable v          : RegType;
       variable lastBits   : std_logic_vector(r.guard'length + r.usr'length - 1 downto 0);
    begin
@@ -144,6 +151,9 @@ begin
             if ( ( vldInp and rdyOut ) = '1' ) then
                v.crc := CrcWrdWiseLE(POLY_G, r.crc, datInp);
                v.usr := usrInp;
+               if ( jamInp = '1' ) then
+                  v.jam := (others => '1');
+               end if;
                if ( COBS_EOF_G = datInp ) then
                   -- stop output (but consume input)
                   vldOut  <= '0';
@@ -154,8 +164,8 @@ begin
                   end if;
                   v.usr   := r.usr;
                   -- EOF does not go into CRC but add the guard and usr bits ('0' for now)
-		  -- also: (optionally) invert CRC (standard way to detect trailing zeros)
-                  v.crc   := CRC_OUT( CrcWrdWiseLE(POLY_G, r.crc, lastBits) );
+                  -- also: (optionally) invert CRC (standard way to detect trailing zeros)
+                  v.crc   := v.jam xor CRC_OUT( CrcWrdWiseLE(POLY_G, r.crc, lastBits) );
                end if;
             end if;
 
@@ -241,6 +251,7 @@ begin
             vldOut  <= '1';
             datOut  <= COBS_EOF_G;
             v.crc   := CRC_INIT_G;
+            v.jam   := (others => '0');
             v.guard := (others => '0');
             if ( rdyOut = '1' ) then
                v.state := RUN;
