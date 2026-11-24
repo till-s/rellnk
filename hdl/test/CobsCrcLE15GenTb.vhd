@@ -274,5 +274,4 @@ begin
          rdyOut          => '1'
       );
 
-
 end architecture rtl;

@@ -73,6 +73,7 @@ entity RelLnk is
       vldOutTx        : out std_logic;
       lstOutTx        : out std_logic;
       rdyOutTx        : in  std_logic;
+
       datInpRx        : in  std_logic_vector(7 downto 0);
       vldInpRx        : in  std_logic;
       lstInpRx        : in  std_logic;
@@ -337,7 +338,7 @@ begin
             -- the fifo's read pipeline must be reloaded;
             -- no problem in REX_CLEAN state
 
-	 when TX_ACK =>
+         when TX_ACK =>
             -- pure ACK messages are not retransmitted
             txDat     := mkHdr1(r.txReq, r.rxAck, REL_LNK_MSG_ACK_C);
             v.sendAck := false;
@@ -347,7 +348,7 @@ begin
                v.txState := IDLE;
             end if;
 
-	 when TX_HDR =>
+         when TX_HDR =>
             txDat     := mkHdr1(r.txReq, r.rxAck, REL_LNK_MSG_DAT_C);
             v.sendAck := false;
             vldOutTx  <= '1';
@@ -356,7 +357,7 @@ begin
                v.txState    := TX_OOB;
             end if;
 
-	 when TX_OOB =>
+         when TX_OOB =>
             txDat     := oobInpTx;
             v.txOob   := oobInpTx;
             vldOutTx  <= '1';
@@ -373,7 +374,7 @@ begin
                end if;
             end if;
 
-	 when TX_PLD =>
+         when TX_PLD =>
             -- copy payload
             vldOutTx  <= vldInpTx;
             lstOutTx  <= lstInpTx;
@@ -388,7 +389,7 @@ begin
                end if;
             end if;
 
-      when REX_HDR =>
+         when REX_HDR =>
             if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                -- already ACKED; 
                v.txState     := REX_ABORT;
@@ -473,7 +474,7 @@ begin
       rexFifoCmPtr <= r.rexCmPtr;
       oobOutRx     <= r.rxOob;
 
-      rin      <=  v;
+      rin          <=  v;
    end process P_COMB;
 
 

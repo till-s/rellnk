@@ -46,6 +46,7 @@ package RelLnkPkg is
 
    constant REL_LNK_MSG_DAT_C : RelLnkMsgTyp := to_unsigned(0, RelLnkMsgTyp'length);
    constant REL_LNK_MSG_ACK_C : RelLnkMsgTyp := to_unsigned(1, RelLnkMsgTyp'length);
+   constant REL_LNK_MSG_SYN_C : RelLnkMsgTyp := to_unsigned(2, RelLnkMsgTyp'length);
 
    function mkHdr1(constant req : RelLnkSeqNoExt; constant ack : RelLnkSeqNoExt; constant typ : RelLnkMsgTyp)
    return std_logic_vector;
