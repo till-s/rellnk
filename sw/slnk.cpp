@@ -48,7 +48,7 @@
 
 namespace simple_link {
 
-enum class MsgType { DATA, ACKONLY };
+enum class MsgType { DATA, ACKONLY, SYN };
 
 struct Header {
 	uint8_t req;
@@ -99,6 +99,35 @@ private:
 	static constexpr const std::chrono::duration ACK_TIMEOUT = std::chrono::milliseconds(500);
 
 	static constexpr size_t TX_Q_SIZE = 2;
+
+protected:
+	void resetUnlocked(bool purgeTx, bool purgeRx) {
+		txReq_ = 0;
+		txAck_ = 0;
+		rxReq_ = 0;
+		rxAck_ = 0;
+		rexActive_ = false;
+		while ( ! rex_.empty() ) {
+			rex_.pop_front();
+		}
+		if ( purgeTx ) {
+			while ( ! txq_.empty() ) {
+				txq_.pop_front();
+			}
+		}
+		if ( purgeRx ) {
+			while ( ! rxq_.empty() ) {
+				rxq_.pop_front();
+			}
+		}
+
+		if ( ! txq_.empty() ) {
+			// if tx queue was not purged we notify the TX
+			txRdy_.notify_one();
+		}
+
+		unackedData_ = 0;
+	}
 public:
 	Link(ChannelPtr chnl) : chnl_(chnl) {}
 
@@ -237,8 +266,7 @@ public:
 		}
 	}
 
-	virtual void send(MsgPtr m)
-	{
+	virtual void send(MsgPtr m) {
 		if ( m ) {
 			bool notifyTx;
 			{
