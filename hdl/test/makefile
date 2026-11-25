@@ -30,7 +30,7 @@ GHDLFLAGS=-fsynopsys
 VPATH=../
 
 PROGS+=EOFTagTb CobsDecoderTb CobsEncoderTb
-PROGS+=CobsCrcLE15GenTb CobsCrcLE15CheckTb RelLnkTb RelLnkRndTb
+PROGS+=CobsCrcLE15GenTb CobsCrcLE15CheckTb RelLnkTb RelLnkRndTb RelLnkSynTb
 
 all: $(PROGS)
 
@@ -71,5 +71,6 @@ StrmPauseRnd.o: StrmPause.o RndPkg.o
 
 RelLnkTb.o: RelLnkPkg.o RelLnk.o PktUtilFifo.o
 RelLnkRndTb.o: RndPkg.o RelLnkPkg.o RelLnk.o StrmPauseRnd.o PktDropRnd.o
+RelLnkSynTb.o: RndPkg.o RelLnkPkg.o RelLnk.o StrmPauseRnd.o PktDropRnd.o
 
 .PHONY: clean test all
