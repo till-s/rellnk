@@ -361,6 +361,13 @@ begin
             elsif ( (rexFifoEmpty = '0') and ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) ) then
                -- cleanup the retransmission queue
                v.txState  := REX_CLEAN;
+            elsif ( (rexFifoEmpty = '0' ) and (signed(r.curTime - getTimeout(rexFifoRdDat)) >= 0) ) then
+	       -- retransmissions?
+               v.txState    := REX_HDR;
+               v.rexRdPtr   := r.fifoHoldPtr;
+               v.rexReq     := getReqNo(rexFifoRdDat);
+               v.rexLstPtr  := getLstPtr(rexFifoRdDat);
+               rexFifoRdEna <= '1';
             elsif ( ((r.txReq - r.txAck) < REL_LNK_WINSZ_G) and ( (vldInpTx = '1') or (HAVE_OOB_TX_G and (oobInpTx /= r.txOob)) ) ) then
                -- step sequence number
                v.txReq   := r.txReq + 1;
@@ -369,12 +376,6 @@ begin
             elsif ( r.rxReq /= r.rxAck or r.sendAck ) then
                v.rxAck   := r.rxReq;
                v.txState := TX_ACK;
-            elsif ( (rexFifoEmpty = '0' ) and (signed(r.curTime - getTimeout(rexFifoRdDat)) >= 0) ) then
-               v.txState    := REX_HDR;
-               v.rexRdPtr   := r.fifoHoldPtr;
-               v.rexReq     := getReqNo(rexFifoRdDat);
-               v.rexLstPtr  := getLstPtr(rexFifoRdDat);
-               rexFifoRdEna <= '1';
             end if;
 
          when REX_CLEAN =>
@@ -463,8 +464,11 @@ begin
 
          when REX_HDR =>
             if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
-               -- already ACKED; 
+               -- already ACKED;
                v.txState     := REX_ABORT;
+	       -- must restore rexFifo entry - this will be cleaned, so just use the current time!
+               rexFifoWrDat <= std_logic_vector(r.rexReq) & std_logic_vector(r.rexLstPtr) & std_logic_vector(r.curTime);
+               rexFifoWrEna <= '1';
             else
                -- update ACK field; may have changed since
                -- we sent the original
@@ -515,16 +519,23 @@ begin
                end if;
             end if;
 
+	 -- the REX_ABORT state serves the purpose to restore the rexFifo state
+	 -- so it can be cleaned of already ACKed messages
          when REX_ABORT =>
             -- reset the read pointer
             fifoRdUndo <= '1';
             -- must restore the original order of the REX fifo so that it matches
-            -- what's in the data fifo. Since retransmission was aborted record
-            -- new timeouts
+            -- what's in the data fifo.
             if ( rexFifoEmpty = '0' ) then
                -- copy read data to the back
+	       -- after this operation the expiration times will no longer
+	       -- be monotonic; the retransmissions already sent are at
+	       -- the head with a post-poined timeout, whereas the retransmissions
+	       -- that still need to be done will have their original
+	       -- expiration time. However, since we enter this state because
+	       -- new ACKs have been received we will go through REX_CLEAN and
+	       -- remove the postponed entries.
                rexFifoWrDat                  <= rexFifoRdDat;
-               rexFifoWrDat(r.curTime'range) <=  std_logic_vector(r.curTime + REX_TIMEOUT_G);
                rexFifoWrEna                  <= '1';
                rexFifoRdEna                  <= '1';
             else
