@@ -136,9 +136,6 @@ architecture rtl of RelLnk is
    type     Slv9Array   is array (natural range <>) of std_logic_vector(8 downto 0);
    type     Uns8Array   is array (natural range <>) of unsigned(7 downto 0);
 
-   subtype  ReqSeqNo    is RelLnkSeqNoExt;
-   subtype  AckSeqNo    is RelLnkSeqNoExt;
-
    type     RegType   is record
       txState           : TxStateType;
       rxState           : RxStateType;
@@ -520,7 +517,7 @@ begin
             end if;
 
 	 -- the REX_ABORT state serves the purpose to restore the rexFifo state
-	 -- so it can be cleaned of already ACKed messages
+	 -- so it can be cleaned of already ACKed messagest sta
          when REX_ABORT =>
             -- reset the read pointer
             fifoRdUndo <= '1';
