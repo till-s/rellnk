@@ -10,6 +10,8 @@
 #include <chrono>
 #include <thread>
 
+#define DBGPRINTF(args...) do {} while (0)
+
 // Simple reliable full-duplex link
 //
 // a) packet integrity is assumed to be checked by lower layer (CRC mismatch should result
@@ -66,7 +68,9 @@ using MsgPtr = std::shared_ptr<Msg>;
 class Channel {
 public:
 	virtual void post(MsgPtr) = 0;
-	virtual MsgPtr getMsg()   = 0;
+	// recvMsg to return nullptr when the channel is shut down;
+	// this can be used to terminate RX threads
+	virtual MsgPtr rcvMsg()   = 0;
 	virtual ~Channel()        = default;
 };
 
@@ -75,9 +79,9 @@ using Timeout    = std::chrono::time_point<std::chrono::steady_clock>;
 
 class Link : public std::enable_shared_from_this<Link> {
 public:
-	static constexpr const size_t                 LDDATWINSZ = 6;
+	static constexpr const int                    LDDATWINSZ = 6;
 private:
-	static constexpr const size_t                 DATWINSZ   = (1<<LDDATWINSZ);
+	static constexpr const size_t                 DATWINSZ   = (LDDATWINSZ >= 0 ? (1<<LDDATWINSZ) : 0);
 	static constexpr const uint8_t                SEQWINSZ   = 4;
 	std::mutex                                    mtx_;
 	std::condition_variable                       rexAdj_;
@@ -89,6 +93,8 @@ private:
 	uint8_t                                       rxReq_ { 0 };
 	uint8_t                                       rxAck_ { 0 };
 	bool                                          rexActive_ { false };
+	bool                                          synActive_ { false };
+	bool                                          running_ { true };
 	std::deque<std::pair<MsgPtr, Timeout>>        rex_;
 	std::deque<MsgPtr>                            txq_;
 	std::deque<MsgPtr>                            rxq_;
@@ -101,35 +107,64 @@ private:
 	static constexpr size_t TX_Q_SIZE = 2;
 
 protected:
-	void resetUnlocked(bool purgeTx, bool purgeRx) {
-		txReq_ = 0;
-		txAck_ = 0;
-		rxReq_ = 0;
-		rxAck_ = 0;
-		rexActive_ = false;
+	void syncUnlocked(bool purgeTx, bool purgeRx) {
+		txReq_ = 0; // RW by RX and TX
+		txAck_ = 0; // RW by RX, RO by TX
+		rxReq_ = 0; // RW by RX, RO by TX, RO by REX
+		rxAck_ = 0; // WO by RX, RW by TX, RO by REX
+		// Do NOT reset 'rexActive_': if the REX thread just has done a retransmission
+		// it will lock again and inspect the queue. If we reset rexActive_ here we
+		// would create a race: the TX thread runs first it could add new packets to the
+		// rex queue which would then be picked up by the REX thread.
+		//
+		// Just clearing the rex_ queue is enough. In the scenario described above the
+		// REX thread would find the queue empty and proceed to reset rexActive_.
+		// rexActive_ = false;
 		while ( ! rex_.empty() ) {
 			rex_.pop_front();
 		}
+
 		if ( purgeTx ) {
 			while ( ! txq_.empty() ) {
 				txq_.pop_front();
 			}
+			txSpc_.notify_one();
 		}
 		if ( purgeRx ) {
 			while ( ! rxq_.empty() ) {
 				rxq_.pop_front();
 			}
 		}
-
-		if ( ! txq_.empty() ) {
-			// if tx queue was not purged we notify the TX
-			txRdy_.notify_one();
-		}
-
+		// hold off transmitter
+		synActive_   = true;
 		unackedData_ = 0;
 	}
 public:
 	Link(ChannelPtr chnl) : chnl_(chnl) {}
+
+	virtual void shutdown() {
+		{
+		std::unique_lock<std::mutex> l(mtx_);
+		running_ = false;
+		}
+		rexAdj_.notify_one();
+		txSpc_.notify_all();
+		txRdy_.notify_all();
+		rxDat_.notify_all();
+	}
+
+	// prepare for new threads; link must  have been shutdown first
+	virtual void reset() {
+		std::unique_lock<std::mutex> l(mtx_);
+		if ( running_ ) {
+			l.unlock();
+			fprintf(stderr, "WARNING: Link::reset() ignored - link still running\n");
+			return;
+		}
+		syncUnlocked(true, true);
+		running_ = true;
+		// new threads may be spawned after this
+	}
 
 	virtual MsgPtr msgAlloc() {
 		MsgPtr m = std::make_shared<Msg>();
@@ -137,23 +172,85 @@ public:
 		return m;
 	}
 
+	// returns nullptr if the link has been shut down
 	virtual MsgPtr pop() {
 		std::unique_lock<std::mutex> l(mtx_);
-		while ( rxq_.empty() ) {
+		while ( running_ && rxq_.empty() ) {
 			rxDat_.wait(l);
+		}
+		if ( ! running_ ) {
+			return MsgPtr();
 		}
 		MsgPtr m = rxq_.front();
 		rxq_.pop_front();
 		return m;
 	}
 
+	// request SYNC with peer (start a new connection).
+	// Note that concurrent attempts to sync by both peers
+	// may lead to undefined behavior. Usually one station
+	// is the 'master' and issues sync() whereas the
+	// other station is passive and only synchronizes
+	// when requested by the master.
+	virtual void sync() {
+		std::unique_lock<std::mutex> l(mtx_);
+		syncUnlocked(false, true);
+		// stop TX
+		synActive_ = true;
+		while ( synActive_ ) {
+			// after unlocking
+			//  - no TX may happen (synActive_ block TX thread)
+			//  - no REX may happen ( rex_ queue is empty)
+			//  - RX knows to toss packets until SYN is received
+			l.unlock();
+			sendSyn();
+			l.lock();
+			// use txRdy condvar; tx thread is also waiting for synActive_ resetting
+			txRdy_.wait_until(l, Timeout::clock::now() + REX_TIMEOUT);
+		}
+	}
+
+	virtual void sendSyn() {
+		MsgPtr m = msgAlloc();
+		m->typ = MsgType::SYN;
+		m->req = txReq_;
+		m->ack = rxAck_;
+		chnl_->post(m);
+	}
+
 	virtual void rxRun() {
-		while ( 1 ) {
+		// hold a reference of the shared pointer while running
+		// if this method is overridden the subclass may have
+		// to acquire another reference to prevent destruction
+		auto ref = shared_from_this();
+
+		MsgPtr m;
+		while ( (m = chnl_->rcvMsg()) ) {
 			bool wakeRex      = false;
 			bool wakeTx       = false;
 			bool wakeConsumer = false;
-			MsgPtr   m   = chnl_->getMsg();
 			std::unique_lock<std::mutex> l(mtx_);
+			// syn processing
+			if ( MsgType::SYN == m->typ ) {
+				if ( synActive_ ) {
+					// we issued a SYN and received a reply -- all done
+				} else {
+					// we received a SYN request; reset and send reply
+					syncUnlocked(false, false);
+					// synActive_ is now asserted; TX thread cannot send; REX queue is empty
+					l.unlock();
+					sendSyn();
+					l.lock();
+				}
+				synActive_ = false;
+				l.unlock();
+				txRdy_.notify_all(); // possibly, TX thread and syncRequest are waiting
+				continue;
+			}
+			if ( synActive_ ) {
+				// waiting for SYN reply; ditch everything until we do receive it
+				continue;
+			}
 			// ack processing
 			if ( static_cast<uint8_t>(m->ack - txAck_) <= static_cast<uint8_t>(txReq_ - txAck_) ) {
 				// OK (normal case); ack is in the retransmission queue
@@ -164,24 +261,26 @@ public:
 				while ( ! rex_.empty() && static_cast<int8_t>(m->ack - rex_.front().first->req) >= 0 ) {
 					// if the retransmission queue was changed; wake the REX thread
 					wakeRex       = true;
-					// if we use the 'unackedData' window we must wake the tx to recheck if there is space for
-					// the next message
-					wakeTx        = true;
-					unackedData_ -= rex_.front().first->pld;
-					printf("RX removed REQ %u ACK %u from rex q; unackedData %zu\n", rex_.front().first->req, rex_.front().first->ack, unackedData_);
+					if ( DATWINSZ ) {
+						// if we use the 'unackedData' window we must wake the tx to recheck if there is space for
+						// the next message
+						wakeTx        = true;
+						unackedData_ -= rex_.front().first->pld;
+					}
+					DBGPRINTF("RX removed REQ %u ACK %u from rex q; unackedData %zu\n", rex_.front().first->req, rex_.front().first->ack, unackedData_);
 					rex_.pop_front();
 				}
 				txAck_ = m->ack;
 			} else {
 				// a redundant ACK for which we already have removed the retransmission; ignore
-				printf("RX Out of order ACK ?? %u, txReq %u, txAck %u\n", m->ack, txReq_, txAck_);
+				DBGPRINTF("RX Out of order ACK ?? %u, txReq %u, txAck %u\n", m->ack, txReq_, txAck_);
 			}
 
 			// req processing
 			//
-			if ( m->typ == MsgType::ACKONLY ) {
+			if ( MsgType::ACKONLY == m->typ ) {
 				// Ignore req number of ACKONLY message
-				printf("RX ACK MSG r %u a %u; DROP\n", m->req, m->ack);
+				DBGPRINTF("RX ACK MSG r %u a %u; DROP\n", m->req, m->ack);
 			} else {
 				if ( m->req == static_cast<uint8_t>(rxReq_ + 1) ) {
 					// New request, received in sequence
@@ -190,14 +289,14 @@ public:
 					rxq_.push_back(m);
 					++rxReq_;
 					wakeTx       = true;
-					printf("RX ACCEPT MSG r %u a %u\n", m->req, m->ack);
+					DBGPRINTF("RX ACCEPT MSG r %u a %u\n", m->req, m->ack);
 				} else {
 					// they haven't seen the ack to this? force
 					// retransmission of ack immediatelyl
 					//
 					rxAck_ = rxReq_ - 1;
 					wakeTx = true;
-					printf("RX Redundant REQ %u ACK %u; DROP\n", m->req, m->ack);
+					DBGPRINTF("RX Redundant REQ %u ACK %u; DROP\n", m->req, m->ack);
 				}
 			}
 			l.unlock();
@@ -214,19 +313,28 @@ public:
 	}
 
 	virtual void rexRun() {
+		// hold a reference of the shared pointer while running
+		// if this method is overridden the subclass may have
+		// to acquire another reference to prevent destruction
+		auto ref = shared_from_this();
+
 		std::queue<MsgPtr> q;
 		while ( 1 ) {
 			MsgPtr m;
 			{
 				std::unique_lock<std::mutex> l(mtx_);
-				while ( rex_.empty() ) {
+				while ( running_ && (rex_.empty() || (Timeout::clock::now() < rex_.front().second)) ) {
 					if ( rex_.empty() ) {
 						rexAdj_.wait(l);
 					} else {
 						rexAdj_.wait_until(l, rex_.front().second);
 					}
 				}
-				// can only get here if the req_ queue is not empty!
+				if ( ! running_ ) {
+					break;
+				}
+				// can only get here if the req_ queue is not empty and the
+				// front element's timeout has expired!
 
 				// stop the TX thread from sending and adding to the rex_ queue
 				rexActive_     = true;
@@ -243,7 +351,7 @@ public:
 							// update the ACK field; we may have seen more REQs since
 							// sending the original
 							m->ack = (rxAck_ = rxReq_);
-							printf("REX REQ %u, ACK %u\n", m->req, m->ack);
+							DBGPRINTF("REX REQ %u, ACK %u\n", m->req, m->ack);
 							l.unlock();
 							chnl_->post(m);
 							l.lock();
@@ -252,7 +360,7 @@ public:
 								if ( it->first->req == rexReq ) {
 									// still there; adjust the timeout
 									it->second = Timeout::clock::now() + REX_TIMEOUT;
-									printf("REX readjusted timeout REQ %u, ACK %u\n", it->first->req, it->first->ack);
+									DBGPRINTF("REX readjusted timeout REQ %u, ACK %u\n", it->first->req, it->first->ack);
 									break;
 								}
 							}
@@ -271,8 +379,12 @@ public:
 			bool notifyTx;
 			{
 			std::unique_lock<std::mutex> l(mtx_);
-			while ( txq_.size() >= TX_Q_SIZE ) {
+			while ( running_ && (txq_.size() >= TX_Q_SIZE) ) {
 				txSpc_.wait(l);
+			}
+			if ( ! running_ ) {
+				// silently dump
+				return;
 			}
 			notifyTx = txq_.empty();
 			txq_.push_back(m);
@@ -283,7 +395,23 @@ public:
 		}
 	}
 
+	//         M                           S
+	//           P1  SYN P2              P1 SYN P2      
+	//           rxpre                   P3 SYN
+	//
+	//
+	//       M tx     P1    SYN    P2
+	//         rx                       SYN     
+	//       S tx               P3  SYN P4        
+	//         rx        P1     SYN     P2      
+	//           -----------------------------------------------------------> t
+
 	virtual void txRun() {
+		// hold a reference of the shared pointer while running
+		// if this method is overridden the subclass may have
+		// to acquire another reference to prevent destruction
+		auto ref = shared_from_this();
+
 		while ( 1 ) {
 			std::unique_lock<std::mutex> l(mtx_);
 			bool canSend;
@@ -295,7 +423,23 @@ public:
 			//
 			// Note: it doesn't make sense to send new frames while retransmissions are going on; they would
 			//       arrive out of sequence and thus just consume bandwidth!
-			while ( ! (canSend = (((txReq_ - txAck_) < SEQWINSZ) && ! txq_.empty() && ! rexActive_ && txq_.front()->pld + unackedData_ <= DATWINSZ)) && (rxReq_ == rxAck_) ) {
+			while (1) {
+				if ( ! running_ ) {
+					goto bail;
+				}
+				// sending not blocked
+				canSend = ! rexActive_ && ! synActive_;
+				// AND TX window open
+				canSend = canSend && ((txReq_ - txAck_) < SEQWINSZ);
+				// AND there is something to send
+				canSend = canSend && ! txq_.empty();
+				if ( DATWINSZ ) {
+					// AND txdata fits (if DATWINSZ is enabled)
+					canSend = canSend && (txq_.front()->pld + unackedData_ <= DATWINSZ);
+				}
+				if ( canSend || (rxReq_ != rxAck_) ) {
+					break;
+				}
 #define ACK_TIMEOUT_FOREVER
 #ifdef ACK_TIMEOUT_FOREVER
 				txRdy_.wait(l);
@@ -306,7 +450,7 @@ public:
 				}
 #endif
 			}
-			printf("TX q empty %u, rxReq_ %u, rxAck_ %u\n", txq_.empty(), rxReq_, rxAck_);
+			//printf("TX q empty %u, rxReq_ %u, rxAck_ %u\n", txq_.empty(), rxReq_, rxAck_);
 			bool noRex   = false;
 			MsgPtr m;
 			if ( ! canSend ) {
@@ -319,7 +463,9 @@ public:
 				txq_.pop_front();
 				// step tx sequency number
 				++txReq_;
-				unackedData_ += m->pld;
+				if ( DATWINSZ ) {
+					unackedData_ += m->pld;
+				}
 			}
 			m->req = txReq_;
 			m->ack = (rxAck_ = rxReq_); // update rxAck_
@@ -339,6 +485,9 @@ public:
 				txSpc_.notify_one();
 			}
 		}
+	bail:
+		// avoid 'label at end of compound statement' warnings
+		do {} while (0);
 	}
 };
 
@@ -351,8 +500,23 @@ struct SyncQ {
 	std::condition_variable         rxRdy_;
 	std::mutex                      mtx_;
 	size_t                          qsz_;
+	bool                            running_;
 
-	SyncQ(size_t qsz) : qsz_(qsz) {}
+	SyncQ(size_t qsz) : qsz_(qsz), running_(true) {}
+
+	void shutdown() {
+		{
+		std::unique_lock<std::mutex> l(mtx_);
+		running_ = false;
+		// purge queue; this unblocks 'push' waiting for the queue to drain
+		while ( ! q_.empty() ) {
+			q_.pop_front();
+		}
+		}
+		txRdy_.notify_all();
+		rxRdy_.notify_all();
+
+	}
 
 	void push(T el) {
 		bool notifyRx;
@@ -361,8 +525,10 @@ struct SyncQ {
 			while ( q_.size() >= qsz_ ) {
 				txRdy_.wait(l);
 			}
-			notifyRx = q_.empty();
-			q_.push_back(el);
+			if ( running_ ) {
+				notifyRx = q_.empty();
+				q_.push_back(el);
+			}
 		}
 		if ( notifyRx ) {
 			rxRdy_.notify_one();
@@ -374,8 +540,11 @@ struct SyncQ {
 		T el;
 		{
 			std::unique_lock<std::mutex> l(mtx_);
-			while ( q_.empty() ) {
+			while ( q_.empty() && running_ ) {
 				rxRdy_.wait(l);
+			}
+			if ( ! running_ ) {
+				return el;
 			}
 			notifyTx = ( q_.size() >= qsz_ );
 			el = q_.front();
@@ -423,19 +592,19 @@ public:
 
 	virtual void post(simple_link::MsgPtr m) override {
 		int32_t r = rnd_();
-		printf("random %i\n", r);
+		DBGPRINTF("random %i\n", r);
 		// NOTE: lsbit is not really that random (state size 8) and led to a certain REQ always being dropped!
 		if ( true && !!(r & (1<<30)) ) {
-			printf("message posted random DROP REQ %u, ACK %u\n", m->req, m->ack);
+			DBGPRINTF("message posted random DROP REQ %u, ACK %u\n", m->req, m->ack);
 			return; // drop
 		}
 		txq_->push(m);
-		printf("message posted REQ %u, ACK %u\n", m->req, m->ack);
+		DBGPRINTF("message posted REQ %u, ACK %u\n", m->req, m->ack);
 	}
 
-	virtual simple_link::MsgPtr getMsg() override {
+	virtual simple_link::MsgPtr rcvMsg() override {
 		simple_link::MsgPtr m = rxq_->pop();
-		printf("message popped REQ %u, ACK %u\n", m->req, m->ack);
+		DBGPRINTF("message popped REQ %u, ACK %u\n", m->req, m->ack);
 		return m;
 	}
 };
@@ -505,8 +674,8 @@ main()
 	std::thread rxTid2 ( &simple_link::Link::rxRun,  l2 );
 	std::thread txTid2 ( &simple_link::Link::txRun,  l2 );
 
-	Checker check1(l1, l2, 123,  100);
-	Checker check2(l2, l1, 1023, 100);
+	Checker check1(l1, l2, 123,  10);
+	Checker check2(l2, l1, 1023, 10);
 	check1.spawn();
 	check2.spawn();
 	check1.join();
@@ -517,14 +686,22 @@ main()
 		m->pld = i;
 		l1->send(m);
 	}
+
 	fflush(stdout);
 
-	std::this_thread::sleep_for(std::chrono::seconds(2));
-
-	for ( auto m = l2->pop(); m; m=l2->pop() ) {
+	for (int i = 10; i < 13; ++i) {
+		auto m = l2->pop();
+		if ( m->pld != i ) {
+			throw std::runtime_error("Test FAILED - payload mismatch (1)");
+		}
 		printf("Got SEQ %i\n", m->pld);
 		fflush(stdout);
 	}
+
+	aq->shutdown();
+	bq->shutdown();
+	l1->shutdown();
+	l2->shutdown();
 
 	rexTid1.join();
 	rxTid1.join();
