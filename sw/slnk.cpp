@@ -10,6 +10,7 @@
 #include <chrono>
 #include <thread>
 
+//#define DBGPRINTF(args...) do {printf(args);} while (0)
 #define DBGPRINTF(args...) do {} while (0)
 
 // Simple reliable full-duplex link
@@ -52,10 +53,77 @@ namespace simple_link {
 
 enum class MsgType { DATA, ACKONLY, SYN };
 
-struct Header {
-	uint8_t req;
-	uint8_t ack;
-	MsgType typ;
+class MsgPtr;
+
+class SeqNo {
+private:
+	uint8_t val_ {0};
+
+	static constexpr uint8_t msk_ = 3;
+public:
+	SeqNo() = default;
+	SeqNo(uint8_t val) : val_(val) {}
+	SeqNo(const SeqNo &rhs) {
+		val_ = rhs.val_;
+	}
+	SeqNo &operator=(const SeqNo &rhs) {
+		val_ = rhs.val_;
+		return *this;
+	}
+
+	SeqNo &operator=(uint8_t val) {
+		val_ = val;
+		return *this;
+	}
+
+//	operator unsigned() const { return val_; }
+	uint8_t get() const { return val_; }
+
+	SeqNo operator-(const SeqNo &rhs) const {
+		return SeqNo( (val_ - rhs.val_) & msk_ );
+	}
+
+	SeqNo operator+(const SeqNo &rhs) const {
+		return SeqNo( (val_ + rhs.val_) & msk_ );
+	}
+
+	SeqNo &operator++() { val_ = (val_ + 1) & msk_; return *this; }
+
+	SeqNo &operator--() { val_ = (val_ - 1) & msk_; return *this; }
+
+	bool operator<(const SeqNo &rhs) const {
+		return val_ < rhs.val_;
+	}
+	bool operator>=(const SeqNo &rhs) const {
+		return ! (*this < rhs);
+	}
+	bool operator>(const SeqNo &rhs) const {
+		return val_ > rhs.val_;
+	}
+	bool operator<=(const SeqNo &rhs) const {
+		return ! (*this > rhs);
+	}
+	bool operator==(const SeqNo &rhs) const {
+		return val_ == rhs.val_;
+	}
+	bool operator!=(const SeqNo &rhs) const {
+		return ! (*this == rhs);
+	}
+};
+
+class Header {
+private:
+	SeqNo   req_;
+	SeqNo   ack_;
+	MsgType typ_;
+public:
+	void setReq(const SeqNo &x) { req_ = x; }
+	void setAck(const SeqNo &x) { ack_ = x; }
+	void setTyp(MsgType x) { typ_ = x; }
+
+	const SeqNo &req() { return req_; }
+	const SeqNo &ack() { return ack_; }
+	MsgType typ() { return typ_; }
 };
 
 struct Msg : Header {
@@ -63,7 +131,19 @@ struct Msg : Header {
 	int idx;
 };
 
-using MsgPtr = std::shared_ptr<Msg>;
+struct MsgPtr : public std::shared_ptr<Msg> {
+
+	MsgPtr() = default;
+
+	MsgPtr(std::shared_ptr<Msg> m) : std::shared_ptr<Msg>(m) {}
+
+	MsgPtr &operator=(const std::shared_ptr<Msg> &rhs) {
+		std::shared_ptr<Msg>::operator=(rhs);
+		return *this;
+	}
+};
+
+//using MsgPtr = std::shared_ptr<Msg>;
 
 class Channel {
 public:
@@ -77,21 +157,30 @@ public:
 using ChannelPtr = std::shared_ptr<Channel>;
 using Timeout    = std::chrono::time_point<std::chrono::steady_clock>;
 
-class Link : public std::enable_shared_from_this<Link> {
+template <typename MT, int LDDSZ = -1, uint8_t SWSZ = 3>
+class Link : public std::enable_shared_from_this<Link<MT,LDDSZ,SWSZ>> {
 public:
-	static constexpr const int                    LDDATWINSZ = 6;
-private:
+	static constexpr const int                    LDDATWINSZ = LDDSZ;
+	static constexpr const uint8_t                SEQWINSZ   = SWSZ;
 	static constexpr const size_t                 DATWINSZ   = (LDDATWINSZ >= 0 ? (1<<LDDATWINSZ) : 0);
-	static constexpr const uint8_t                SEQWINSZ   = 4;
+
+	using MsgPtr = MT;
+
+protected:
+	std::shared_ptr<Link> shared_from_this() {
+		return std::enable_shared_from_this<Link>::shared_from_this();
+	}
+
+private:
 	std::mutex                                    mtx_;
 	std::condition_variable                       rexAdj_;
 	std::condition_variable                       txRdy_;
 	std::condition_variable                       txSpc_;
 	std::condition_variable                       rxDat_;
-	uint8_t                                       txReq_ { 0 };
-	uint8_t                                       txAck_ { 0 };
-	uint8_t                                       rxReq_ { 0 };
-	uint8_t                                       rxAck_ { 0 };
+	SeqNo                                         txReq_ { 0 };
+	SeqNo                                         txAck_ { 0 };
+	SeqNo                                         rxReq_ { 0 };
+	SeqNo                                         rxAck_ { 0 };
 	bool                                          rexActive_ { false };
 	bool                                          synActive_ { false };
 	bool                                          running_ { true };
@@ -168,7 +257,7 @@ public:
 
 	virtual MsgPtr msgAlloc() {
 		MsgPtr m = std::make_shared<Msg>();
-		m->typ = MsgType::DATA;
+		m->setTyp( MsgType::DATA );
 		return m;
 	}
 
@@ -212,9 +301,9 @@ public:
 
 	virtual void sendSyn() {
 		MsgPtr m = msgAlloc();
-		m->typ = MsgType::SYN;
-		m->req = txReq_;
-		m->ack = rxAck_;
+		m->setTyp( MsgType::SYN );
+		m->setReq( txReq_ );
+		m->setAck( rxAck_ );
 		chnl_->post(m);
 	}
 
@@ -231,7 +320,7 @@ public:
 			bool wakeConsumer = false;
 			std::unique_lock<std::mutex> l(mtx_);
 			// syn processing
-			if ( MsgType::SYN == m->typ ) {
+			if ( MsgType::SYN == m->typ() ) {
 				if ( synActive_ ) {
 					// we issued a SYN and received a reply -- all done
 				} else {
@@ -252,13 +341,13 @@ public:
 				continue;
 			}
 			// ack processing
-			if ( static_cast<uint8_t>(m->ack - txAck_) <= static_cast<uint8_t>(txReq_ - txAck_) ) {
+			if ( (m->ack() - txAck_) <= (txReq_ - txAck_) ) {
 				// OK (normal case); ack is in the retransmission queue
 				//
 				// if window was full wake transmitter since we're going to make space
-				wakeTx  = (static_cast<uint8_t>(txReq_ - txAck_) == SEQWINSZ);
+				wakeTx  = ((txReq_ - txAck_) == SeqNo(SEQWINSZ));
 				// remove anything up to 'm->ack' from the retransmission queue
-				while ( ! rex_.empty() && static_cast<int8_t>(m->ack - rex_.front().first->req) >= 0 ) {
+				while ( ! rex_.empty() && (m->ack() - rex_.front().first->req()) < SeqNo(SEQWINSZ) ) {
 					// if the retransmission queue was changed; wake the REX thread
 					wakeRex       = true;
 					if ( DATWINSZ ) {
@@ -267,36 +356,36 @@ public:
 						wakeTx        = true;
 						unackedData_ -= rex_.front().first->pld;
 					}
-					DBGPRINTF("RX removed REQ %u ACK %u from rex q; unackedData %zu\n", rex_.front().first->req, rex_.front().first->ack, unackedData_);
+					DBGPRINTF("RX removed REQ %u ACK %u from rex q; unackedData %zu\n", unsigned(rex_.front().first->req().getU()), unsigned(rex_.front().first->ack().getU()), unackedData_);
 					rex_.pop_front();
 				}
-				txAck_ = m->ack;
+				txAck_ = m->ack();
 			} else {
 				// a redundant ACK for which we already have removed the retransmission; ignore
-				DBGPRINTF("RX Out of order ACK ?? %u, txReq %u, txAck %u\n", m->ack, txReq_, txAck_);
+				DBGPRINTF("RX Out of order ACK ?? %u, txReq %u, txAck %u\n", unsigned(m->ack().getU()), unsigned(txReq_.getU()), unsigned(txAck_.getU()));
 			}
 
 			// req processing
 			//
-			if ( MsgType::ACKONLY == m->typ ) {
+			if ( MsgType::ACKONLY == m->typ() ) {
 				// Ignore req number of ACKONLY message
-				DBGPRINTF("RX ACK MSG r %u a %u; DROP\n", m->req, m->ack);
+				DBGPRINTF("RX ACK MSG r %u a %u; DROP\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 			} else {
-				if ( m->req == static_cast<uint8_t>(rxReq_ + 1) ) {
+				if ( m->req() == rxReq_ + 1 ) {
 					// New request, received in sequence
 					// immediate ACK if necessary
 					wakeConsumer = rxq_.empty();
 					rxq_.push_back(m);
 					++rxReq_;
 					wakeTx       = true;
-					DBGPRINTF("RX ACCEPT MSG r %u a %u\n", m->req, m->ack);
+					DBGPRINTF("RX ACCEPT MSG r %u a %u\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 				} else {
 					// they haven't seen the ack to this? force
 					// retransmission of ack immediatelyl
 					//
 					rxAck_ = rxReq_ - 1;
 					wakeTx = true;
-					DBGPRINTF("RX Redundant REQ %u ACK %u; DROP\n", m->req, m->ack);
+					DBGPRINTF("RX Redundant REQ %u ACK %u; DROP\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 				}
 			}
 			l.unlock();
@@ -338,29 +427,30 @@ public:
 
 				// stop the TX thread from sending and adding to the rex_ queue
 				rexActive_     = true;
-				uint8_t rexReq = rex_.front().first->req; // first REQ to retransmit
-				uint8_t rexLst = rex_.back().first->req;  // last REQ to retransmit
+				SeqNo   rexReq = rex_.front().first->req(); // first REQ to retransmit
+				SeqNo   rexLst = rex_.back().first->req();  // last REQ to retransmit
 				--rexReq; // re-decrement
 				do {
 					++rexReq;
 					// check if rexReq is still in the retransmission queue; because we unlock
 					// while transmission is under way the RX could receive ACKs and modify the queue
 					for ( auto it = rex_.begin(); it != rex_.end(); ++it ) {
-						if (it->first->req == rexReq ) {
+						if (it->first->req() == rexReq ) {
 							MsgPtr m = it->first;
 							// update the ACK field; we may have seen more REQs since
 							// sending the original
-							m->ack = (rxAck_ = rxReq_);
-							DBGPRINTF("REX REQ %u, ACK %u\n", m->req, m->ack);
+							rxAck_ = rxReq_;
+							m->setAck( rxReq_ );
+							DBGPRINTF("REX REQ %u, ACK %u\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 							l.unlock();
 							chnl_->post(m);
 							l.lock();
 							// q may have changed;
 							for ( it = rex_.begin(); it != rex_.end(); ++it ) {
-								if ( it->first->req == rexReq ) {
+								if ( it->first->req() == rexReq ) {
 									// still there; adjust the timeout
 									it->second = Timeout::clock::now() + REX_TIMEOUT;
-									DBGPRINTF("REX readjusted timeout REQ %u, ACK %u\n", it->first->req, it->first->ack);
+									DBGPRINTF("REX readjusted timeout REQ %u, ACK %u\n", unsigned(it->first->req().getU()), unsigned(it->first->ack().getU()));
 									break;
 								}
 							}
@@ -455,7 +545,7 @@ public:
 			MsgPtr m;
 			if ( ! canSend ) {
 				m      = msgAlloc();
-				m->typ = MsgType::ACKONLY;
+				m->setTyp( MsgType::ACKONLY );
 				// pure ACK messages are not retransmitted
 				noRex  = true;
 			} else {
@@ -467,8 +557,9 @@ public:
 					unackedData_ += m->pld;
 				}
 			}
-			m->req = txReq_;
-			m->ack = (rxAck_ = rxReq_); // update rxAck_
+			m->setReq( txReq_ );
+			rxAck_ = rxReq_; // update rxAck_
+			m->setAck( rxReq_ );
 			bool wakeRex = false;
 			if ( ! noRex ) {
 				// schedule retransmission
@@ -595,21 +686,25 @@ public:
 		DBGPRINTF("random %i\n", r);
 		// NOTE: lsbit is not really that random (state size 8) and led to a certain REQ always being dropped!
 		if ( true && !!(r & (1<<30)) ) {
-			DBGPRINTF("message posted random DROP REQ %u, ACK %u\n", m->req, m->ack);
+			DBGPRINTF("message posted random DROP REQ %u, ACK %u\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 			return; // drop
 		}
+		DBGPRINTF("message posted REQ %u, ACK %u\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
 		txq_->push(m);
-		DBGPRINTF("message posted REQ %u, ACK %u\n", m->req, m->ack);
 	}
 
 	virtual simple_link::MsgPtr rcvMsg() override {
 		simple_link::MsgPtr m = rxq_->pop();
-		DBGPRINTF("message popped REQ %u, ACK %u\n", m->req, m->ack);
+		if ( m ) {
+			DBGPRINTF("message popped REQ %u, ACK %u\n", unsigned(m->req().getU()), unsigned(m->ack().getU()));
+		} else {
+			DBGPRINTF("message popped SHUTDOWN\n");
+		}
 		return m;
 	}
 };
 
-using LPtr = std::shared_ptr<simple_link::Link>;
+using LPtr = std::shared_ptr<simple_link::Link<simple_link::MsgPtr, 6>>;
 
 class Checker {
 	LPtr   ltx_;
@@ -666,13 +761,13 @@ main()
 	QChannel::QPtr bq = std::make_shared<QChannel::QPtr::element_type>(2);
 	LPtr l1 = std::make_shared<LPtr::element_type>(std::make_shared<QChannel>(aq, bq, 2));
 	LPtr l2 = std::make_shared<LPtr::element_type>(std::make_shared<QChannel>(bq, aq, 5));
-	std::thread rexTid1( &simple_link::Link::rexRun, l1 );
-	std::thread rxTid1 ( &simple_link::Link::rxRun,  l1 );
-	std::thread txTid1 ( &simple_link::Link::txRun,  l1 );
+	std::thread rexTid1( &LPtr::element_type::rexRun, l1 );
+	std::thread rxTid1 ( &LPtr::element_type::rxRun,  l1 );
+	std::thread txTid1 ( &LPtr::element_type::txRun,  l1 );
 
-	std::thread rexTid2( &simple_link::Link::rexRun, l2 );
-	std::thread rxTid2 ( &simple_link::Link::rxRun,  l2 );
-	std::thread txTid2 ( &simple_link::Link::txRun,  l2 );
+	std::thread rexTid2( &LPtr::element_type::rexRun, l2 );
+	std::thread rxTid2 ( &LPtr::element_type::rxRun,  l2 );
+	std::thread txTid2 ( &LPtr::element_type::txRun,  l2 );
 
 	Checker check1(l1, l2, 123,  10);
 	Checker check2(l2, l1, 1023, 10);
