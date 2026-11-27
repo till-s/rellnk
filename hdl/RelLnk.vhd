@@ -182,12 +182,34 @@ architecture rtl of RelLnk is
       synSent           => '0'
    );
 
+   -- difference with a guard bit
+   function timeDiff(constant l,r: unsigned) return signed is
+      variable maxl : natural;
+   begin
+      maxl := l'length;
+      if ( r'length > maxl ) then
+         maxl := r'length;
+      end if;
+      maxl := maxl + 1;
+      return signed(resize(l, maxl) - resize(r,maxl));
+   end function timeDiff;
+
    function getTimeout(constant x : std_logic_vector) return RelLnkTimeoutType is
       constant r : natural := 0;
       constant l : natural := r + RelLnkTimeoutType'length - 1;
    begin
       return RelLnkTimeoutType(x(l downto r));
    end function getTimeout;
+
+   function setTimeout(constant x : std_logic_vector; constant t : RelLnkTimeoutType) return std_logic_vector is
+      constant r : natural := 0;
+      constant l : natural := r + RelLnkTimeoutType'length - 1;
+      variable v : std_logic_vector(x'range);
+   begin
+      v := x;
+      v(l downto r) := std_logic_vector(t);
+      return v;
+   end function setTimeout;
 
    function getLstPtr(constant x : std_logic_vector) return signed is
       constant r : natural := RelLnkTimeoutType'length;
@@ -373,7 +395,7 @@ begin
             elsif ( (rexFifoEmpty = '0') and ( (r.txAck - getReqNo(rexFifoRdDat)) < REL_LNK_WINSZ_G ) ) then
                -- cleanup the retransmission queue
                v.txState  := REX_CLEAN;
-            elsif ( (rexFifoEmpty = '0' ) and (signed(r.curTime - getTimeout(rexFifoRdDat)) >= 0) ) then
+            elsif ( (rexFifoEmpty = '0' ) and (timeDiff(r.curTime, getTimeout(rexFifoRdDat)) >= 0) ) then
                -- retransmissions?
                v.txState    := REX_HDR;
                v.rexRdPtr   := r.fifoHoldPtr;
@@ -548,6 +570,10 @@ begin
                -- new ACKs have been received we will go through REX_CLEAN and
                -- remove the postponed entries.
                rexFifoWrDat                  <= rexFifoRdDat;
+               if ( timeDiff(r.curTime, getTimeout(rexFifoRdDat)) > 0 ) then
+                  -- timeout has expired; drag along to avoid roll-over issues
+                  rexFifoWrDat <= setTimeout(rexFifoRdDat, r.curTime);
+               end if;
                rexFifoWrEna                  <= '1';
                rexFifoRdEna                  <= '1';
             else
