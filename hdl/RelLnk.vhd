@@ -284,7 +284,12 @@ begin
                         -- reset and use delayed version
                         v.txAck   := r.txAck;
                      end if;
-                     v.rxState := STRIP_HDR;
+                     if ( SYN_MASTER_G and ( r.syn = '1' ) ) then
+                        -- while waiting for SYN discard but ACK
+                        -- packets.
+                     else
+                        v.rxState := STRIP_HDR;
+                     end if;
                   else
                      -- they might not have not seen rxReq; ensure we send an ACK
                      -- NOTE: do not set rxAck back to rxReq - 1; it may be picked
