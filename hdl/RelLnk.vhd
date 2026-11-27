@@ -39,6 +39,9 @@ entity RelLnk is
       -- retransmission timeout; pick so that this is
       -- longer than the worst-case round trip time!
       REX_TIMEOUT_G   : RelLnkTimeoutType;
+      -- keep-alive timeout; if nothing has been
+      -- send within this timespan an ACK is forced.
+      ALV_TIMEOUT_G   : unsigned := "";
       -- enable sending ACK immediately after receiving the
       -- header; this may abort retransmissions (before the
       -- packet has been received!) but is more responsive
@@ -103,6 +106,7 @@ end entity RelLnk;
 architecture rtl of RelLnk is
 
    constant LD_REX_FIFO_DEPTH_C : natural := RelLnkSeqNoType'length;
+   constant ALV_TIMEOUT_C       : signed(ALV_TIMEOUT_G'length downto 0) := signed(resize(ALV_TIMEOUT_G, ALV_TIMEOUT_G'length + 1));
 
    signal   fifoFull     : std_logic;
    signal   fifoEmpty    : std_logic;
@@ -148,7 +152,7 @@ architecture rtl of RelLnk is
       rxOob             : std_logic_vector(7 downto 0);
       rexReq            : RelLnkSeqNoExtType;
       curTime           : RelLnkTimeoutType;
-      sendAck           : boolean;
+      sendAck           : signed(ALV_TIMEOUT_C'range);
       rexCmPtr          : signed(LD_REX_FIFO_DEPTH_C downto 0);
       rexRdPtr          : signed(LD_FIFO_DEPTH_G downto 0);
       rexLstPtr         : signed(LD_FIFO_DEPTH_G downto 0);
@@ -169,7 +173,7 @@ architecture rtl of RelLnk is
       rxOob             => (others => '0'),
       rexReq            => to_unsigned(0, RelLnkSeqNoExtType'length),
       curTime           => (others => '0'),
-      sendAck           => false,
+      sendAck           => ALV_TIMEOUT_C,
       rexCmPtr          => (others => '0'),
       rexRdPtr          => (others => '0'),
       rexLstPtr         => (others => '0'),
@@ -246,6 +250,12 @@ begin
          v.syn      := '1';
       end if;
 
+      if ( ALV_TIMEOUT_C'length > 1 ) then
+         if ( r.sendAck >= 0 ) then
+            v.sendAck := r.sendAck - 1;
+         end if;
+      end if;
+
       case ( r.rxState ) is
          when IDLE      =>
             if    ( SYN_MASTER_G and ((r.syn and not r.synSent) = '1') ) then
@@ -294,7 +304,7 @@ begin
                      -- they might not have not seen rxReq; ensure we send an ACK
                      -- NOTE: do not set rxAck back to rxReq - 1; it may be picked
                      --       up by the TX and send out of order! 
-                     v.sendAck := true;
+                     v.sendAck(v.sendAck'left) := '1';
                   end if;
                end if;
             end if;
@@ -375,7 +385,7 @@ begin
                v.txReq   := r.txReq + 1;
                v.rxAck   := r.rxReq;
                v.txState := TX_HDR;
-            elsif ( r.rxReq /= r.rxAck or r.sendAck ) then
+            elsif ( r.rxReq /= r.rxAck or (r.sendAck < 0) ) then
                v.rxAck   := r.rxReq;
                v.txState := TX_ACK;
             end if;
@@ -411,7 +421,7 @@ begin
                -- has been sent
                v.curTime := (others => '0');
             end if;
-            v.sendAck := false;
+            v.sendAck := ALV_TIMEOUT_C;
             vldOutTx  <= '1';
             lstOutTx  <= '1';
             if ( rdyOutTx = '1' ) then
@@ -420,7 +430,7 @@ begin
 
          when TX_HDR =>
             txDat     := mkHdr1(r.txReq, r.rxAck, REL_LNK_MSG_DAT_C);
-            v.sendAck := false;
+            v.sendAck := ALV_TIMEOUT_C;
             vldOutTx  <= '1';
             if ( rdyOutTx = '1' ) then
                fifoWrEna    <= '1';
@@ -476,7 +486,7 @@ begin
                -- we sent the original
                v.rxAck   := r.rxReq;
                txDat     := mkHdr1(r.rexReq, v.rxAck, hdrGetMsgType(fifoRdDat));
-               v.sendAck := false;
+               v.sendAck := ALV_TIMEOUT_C;
                vldOutTx  <= not fifoEmpty; -- empty may temporarily assert
                if ( (not fifoEmpty and rdyOutTx) = '1' ) then
                   fifoRdEna  <= '1';

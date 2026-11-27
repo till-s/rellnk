@@ -47,6 +47,7 @@ architecture rtl of RelLnkRndTb is
    constant FIXED_STALL_C    : integer   := -10; --10;
    constant FIXED_STALL_B2A_C: integer   := 8*FIXED_STALL_C;
    constant TIMEOUT_C        : natural   := 2**LD_PLD_SIZE_C * 5 * ite(FIXED_STALL_C > 0, FIXED_STALL_C, 1);
+   constant ALV_TIMEOUT_C    : unsigned  := to_unsigned(20, 6);
    constant WINSZ_C          : positive  := 3;
    constant LD_PAUSE_C       : natural   := 16;
 
@@ -191,6 +192,7 @@ begin
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
          REX_TIMEOUT_G   => to_unsigned(TIMEOUT_C, RelLnkTimeoutType'length),
+         ALV_TIMEOUT_G   => ALV_TIMEOUT_C,
          FAST_ACK_G      => false,
          REL_LNK_WINSZ_G => WINSZ_C
       )
@@ -313,6 +315,7 @@ begin
       generic map (
          LD_FIFO_DEPTH_G => LD_FIFO_DEPTH_C,
          REX_TIMEOUT_G   => to_unsigned(TIMEOUT_C, RelLnkTimeoutType'length),
+         ALV_TIMEOUT_G   => ALV_TIMEOUT_C,
          FAST_ACK_G      => false,
          REL_LNK_WINSZ_G => WINSZ_C
       )
