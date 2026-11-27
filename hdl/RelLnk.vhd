@@ -49,7 +49,7 @@ entity RelLnk is
       -- ACK.
       FAST_ACK_G      : boolean;
       -- max number of unacked frames that may be sent
-      REL_LNK_WINSZ_G : positive range 1 to (2**RelLnkSeqNo'length - 1) := 3;
+      REL_LNK_WINSZ_G : positive range 1 to (2**RelLnkSeqNoType'length - 1) := 3;
       -- support OOB in TX path
       HAVE_OOB_TX_G   : boolean := true;
       -- support OOB in RX path
@@ -102,7 +102,7 @@ end entity RelLnk;
 
 architecture rtl of RelLnk is
 
-   constant LD_REX_FIFO_DEPTH_C : natural := RelLnkSeqNo'length;
+   constant LD_REX_FIFO_DEPTH_C : natural := RelLnkSeqNoType'length;
 
    signal   fifoFull     : std_logic;
    signal   fifoEmpty    : std_logic;
@@ -117,7 +117,7 @@ architecture rtl of RelLnk is
 
    signal   fifoRst      : std_logic;
 
-   constant REX_FIFO_WIDTH_C : natural := RelLnkSeqNoExt'length + fifoWrPtr'length + RelLnkTimeoutType'length;
+   constant REX_FIFO_WIDTH_C : natural := RelLnkSeqNoExtType'length + fifoWrPtr'length + RelLnkTimeoutType'length;
 
    signal   rexFifoWrEna : std_logic;
    signal   rexFifoWrUndo: std_logic;
@@ -139,14 +139,14 @@ architecture rtl of RelLnk is
    type     RegType   is record
       txState           : TxStateType;
       rxState           : RxStateType;
-      txReq             : RelLnkSeqNoExt;
-      txAck             : RelLnkSeqNoExt;
-      txAckDly          : RelLnkSeqNoExt;
+      txReq             : RelLnkSeqNoExtType;
+      txAck             : RelLnkSeqNoExtType;
+      txAckDly          : RelLnkSeqNoExtType;
       txOob             : std_logic_vector(7 downto 0);
-      rxReq             : RelLnkSeqNoExt;
-      rxAck             : RelLnkSeqNoExt;
+      rxReq             : RelLnkSeqNoExtType;
+      rxAck             : RelLnkSeqNoExtType;
       rxOob             : std_logic_vector(7 downto 0);
-      rexReq            : RelLnkSeqNoExt;
+      rexReq            : RelLnkSeqNoExtType;
       curTime           : RelLnkTimeoutType;
       sendAck           : boolean;
       rexCmPtr          : signed(LD_REX_FIFO_DEPTH_C downto 0);
@@ -160,14 +160,14 @@ architecture rtl of RelLnk is
    constant REG_INIT_C : RegType := (
       txState           => IDLE,
       rxState           => IDLE,
-      txReq             => to_unsigned(0, RelLnkSeqNoExt'length),
-      txAck             => to_unsigned(0, RelLnkSeqNoExt'length),
-      txAckDly          => to_unsigned(0, RelLnkSeqNoExt'length),
+      txReq             => to_unsigned(0, RelLnkSeqNoExtType'length),
+      txAck             => to_unsigned(0, RelLnkSeqNoExtType'length),
+      txAckDly          => to_unsigned(0, RelLnkSeqNoExtType'length),
       txOob             => (others => '0'),
-      rxReq             => to_unsigned(0, RelLnkSeqNoExt'length),
-      rxAck             => to_unsigned(0, RelLnkSeqNoExt'length),
+      rxReq             => to_unsigned(0, RelLnkSeqNoExtType'length),
+      rxAck             => to_unsigned(0, RelLnkSeqNoExtType'length),
       rxOob             => (others => '0'),
-      rexReq            => to_unsigned(0, RelLnkSeqNoExt'length),
+      rexReq            => to_unsigned(0, RelLnkSeqNoExtType'length),
       curTime           => (others => '0'),
       sendAck           => false,
       rexCmPtr          => (others => '0'),
@@ -194,11 +194,11 @@ architecture rtl of RelLnk is
       return signed(x(l downto r));
    end function getLstPtr;
 
-   function getReqNo(constant x : std_logic_vector) return RelLnkSeqNoExt is
+   function getReqNo(constant x : std_logic_vector) return RelLnkSeqNoExtType is
       constant r : natural := RelLnkTimeoutType'length + LD_FIFO_DEPTH_G + 1;
-      constant l : natural := r + RelLnkSeqNoExt'length - 1;
+      constant l : natural := r + RelLnkSeqNoExtType'length - 1;
    begin
-      return RelLnkSeqNoExt(x(l downto r));
+      return RelLnkSeqNoExtType(x(l downto r));
    end function getReqNo;
 
    signal   r           : RegType := REG_INIT_C;
@@ -263,9 +263,9 @@ begin
                v.rxState := DROP;
 
                -- REQ processing
-               if    ( hdrGetMsgTyp(datInpRx) = REL_LNK_MSG_ACK_C ) then
+               if    ( hdrGetMsgType(datInpRx) = REL_LNK_MSG_ACK_C ) then
                   -- ignore req number of ACKONLY message
-               elsif ( hdrGetMsgTyp(datInpRx) = REL_LNK_MSG_SYN_C ) then
+               elsif ( hdrGetMsgType(datInpRx) = REL_LNK_MSG_SYN_C ) then
                   -- ignore req and ack numbers of SYN message
                   v.txAckDly := r.txAckDly;
                   v.txAck    := r.txAck;
@@ -273,7 +273,7 @@ begin
                      v.syn      := '0';
                      v.synSent  := '0';
                   else
- 		     v.syn      := '1';
+                     v.syn      := '1';
                   end if;
                else
                   if ( hdrGetReqExtend(datInpRx, r.rxReq) = r.rxReq + 1 ) then
@@ -359,7 +359,7 @@ begin
                -- cleanup the retransmission queue
                v.txState  := REX_CLEAN;
             elsif ( (rexFifoEmpty = '0' ) and (signed(r.curTime - getTimeout(rexFifoRdDat)) >= 0) ) then
-	       -- retransmissions?
+               -- retransmissions?
                v.txState    := REX_HDR;
                v.rexRdPtr   := r.fifoHoldPtr;
                v.rexReq     := getReqNo(rexFifoRdDat);
@@ -463,14 +463,14 @@ begin
             if ( r.txAck - r.rexReq < REL_LNK_WINSZ_G ) then
                -- already ACKED;
                v.txState     := REX_ABORT;
-	       -- must restore rexFifo entry - this will be cleaned, so just use the current time!
+               -- must restore rexFifo entry - this will be cleaned, so just use the current time!
                rexFifoWrDat <= std_logic_vector(r.rexReq) & std_logic_vector(r.rexLstPtr) & std_logic_vector(r.curTime);
                rexFifoWrEna <= '1';
             else
                -- update ACK field; may have changed since
                -- we sent the original
                v.rxAck   := r.rxReq;
-               txDat     := mkHdr1(r.rexReq, v.rxAck, hdrGetMsgTyp(fifoRdDat));
+               txDat     := mkHdr1(r.rexReq, v.rxAck, hdrGetMsgType(fifoRdDat));
                v.sendAck := false;
                vldOutTx  <= not fifoEmpty; -- empty may temporarily assert
                if ( (not fifoEmpty and rdyOutTx) = '1' ) then
@@ -516,8 +516,8 @@ begin
                end if;
             end if;
 
-	 -- the REX_ABORT state serves the purpose to restore the rexFifo state
-	 -- so it can be cleaned of already ACKed messagest sta
+         -- the REX_ABORT state serves the purpose to restore the rexFifo state
+         -- so it can be cleaned of already ACKed messagest sta
          when REX_ABORT =>
             -- reset the read pointer
             fifoRdUndo <= '1';
@@ -525,13 +525,13 @@ begin
             -- what's in the data fifo.
             if ( rexFifoEmpty = '0' ) then
                -- copy read data to the back
-	       -- after this operation the expiration times will no longer
-	       -- be monotonic; the retransmissions already sent are at
-	       -- the head with a post-poined timeout, whereas the retransmissions
-	       -- that still need to be done will have their original
-	       -- expiration time. However, since we enter this state because
-	       -- new ACKs have been received we will go through REX_CLEAN and
-	       -- remove the postponed entries.
+               -- after this operation the expiration times will no longer
+               -- be monotonic; the retransmissions already sent are at
+               -- the head with a post-poined timeout, whereas the retransmissions
+               -- that still need to be done will have their original
+               -- expiration time. However, since we enter this state because
+               -- new ACKs have been received we will go through REX_CLEAN and
+               -- remove the postponed entries.
                rexFifoWrDat                  <= rexFifoRdDat;
                rexFifoWrEna                  <= '1';
                rexFifoRdEna                  <= '1';

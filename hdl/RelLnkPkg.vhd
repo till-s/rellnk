@@ -37,22 +37,22 @@ package RelLnkPkg is
    --      or protocol data,
    --  2.  payload (or protocol data) bytes
 
-   subtype RelLnkSeqNo     is unsigned(1 downto 0);
+   subtype RelLnkSeqNoType     is unsigned(1 downto 0);
    -- extended sequence number
-   subtype RelLnkSeqNoExt  is unsigned(RelLnkSeqNo'high + 1 downto 0);
-   subtype RelLnkMsgTyp    is unsigned(1 downto 0);
+   subtype RelLnkSeqNoExtType  is unsigned(RelLnkSeqNoType'high + 0 downto 0);
+   subtype RelLnkMsgType       is unsigned(1 downto 0);
 
-   subtype RelLnkTimeoutType is unsigned(15 downto 0);
+   subtype RelLnkTimeoutType   is unsigned(15 downto 0);
 
-   constant REL_LNK_MSG_DAT_C : RelLnkMsgTyp := to_unsigned(0, RelLnkMsgTyp'length);
-   constant REL_LNK_MSG_ACK_C : RelLnkMsgTyp := to_unsigned(1, RelLnkMsgTyp'length);
-   constant REL_LNK_MSG_SYN_C : RelLnkMsgTyp := to_unsigned(2, RelLnkMsgTyp'length);
+   constant REL_LNK_MSG_DAT_C : RelLnkMsgType := to_unsigned(0, RelLnkMsgType'length);
+   constant REL_LNK_MSG_ACK_C : RelLnkMsgType := to_unsigned(1, RelLnkMsgType'length);
+   constant REL_LNK_MSG_SYN_C : RelLnkMsgType := to_unsigned(2, RelLnkMsgType'length);
 
-   function mkHdr1(constant req : RelLnkSeqNoExt; constant ack : RelLnkSeqNoExt; constant typ : RelLnkMsgTyp)
+   function mkHdr1(constant req : RelLnkSeqNoExtType; constant ack : RelLnkSeqNoExtType; constant typ : RelLnkMsgType)
    return std_logic_vector;
 
-   subtype AckType is RelLnkSeqNo;
-   subtype ReqType is RelLnkSeqNo;
+   subtype AckType is RelLnkSeqNoType;
+   subtype ReqType is RelLnkSeqNoType;
 
    function hdrGetReq(constant x : std_logic_vector(7 downto 0))
    return ReqType;
@@ -60,20 +60,20 @@ package RelLnkPkg is
    function hdrGetAck(constant x : std_logic_vector(7 downto 0))
    return AckType;
 
-   function hdrGetAckExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExt)
-   return RelLnkSeqNoExt;
+   function hdrGetAckExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExtType)
+   return RelLnkSeqNoExtType;
 
-   function hdrGetReqExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExt)
-   return RelLnkSeqNoExt;
+   function hdrGetReqExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExtType)
+   return RelLnkSeqNoExtType;
 
-   function hdrGetMsgTyp(constant x : std_logic_vector(7 downto 0))
-   return RelLnkMsgTyp;
+   function hdrGetMsgType(constant x : std_logic_vector(7 downto 0))
+   return RelLnkMsgType;
 
 end package RelLnkPkg;
 
 package body RelLnkPkg is
 
-   function mkHdr1(constant req : RelLnkSeqNoExt; constant ack : RelLnkSeqNoExt; constant typ : RelLnkMsgTyp)
+   function mkHdr1(constant req : RelLnkSeqNoExtType; constant ack : RelLnkSeqNoExtType; constant typ : RelLnkMsgType)
    return std_logic_vector is
    begin
       return std_logic_vector(resize(resize(req, ReqType'length) & resize(ack, AckType'length) & typ, 8));
@@ -83,7 +83,7 @@ package body RelLnkPkg is
    return ReqType is
       variable v : unsigned(x'range);
    begin
-      v := shift_right(unsigned(x),  AckType'length + RelLnkMsgTyp'length);
+      v := shift_right(unsigned(x),  AckType'length + RelLnkMsgType'length);
       return ReqType(resize(v, ReqType'length));
    end function hdrGetReq;
 
@@ -91,16 +91,16 @@ package body RelLnkPkg is
    return AckType is
       variable v : unsigned(x'range);
    begin
-      v := shift_right(unsigned(x),  RelLnkMsgTyp'length);
+      v := shift_right(unsigned(x),  RelLnkMsgType'length);
       return AckType(resize(v, AckType'length));
    end function hdrGetAck;
 
-   function extend(constant x : unsigned; constant ref : RelLnkSeqNoExt)
-   return RelLnkSeqNoExt is
-      variable v : RelLnkSeqNoExt;
-      variable d : RelLnkSeqNoExt;
+   function extend(constant x : unsigned; constant ref : RelLnkSeqNoExtType)
+   return RelLnkSeqNoExtType is
+      variable v : RelLnkSeqNoExtType;
+      variable d : RelLnkSeqNoExtType;
    begin
-      if ( x'length = RelLnkSeqNoExt'length ) then
+      if ( x'length = RelLnkSeqNoExtType'length ) then
          return x;
       end if;
       v := resize(x, v'length);
@@ -109,28 +109,28 @@ package body RelLnkPkg is
       return v;
    end function extend;
 
-   function hdrGetAckExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExt)
-   return RelLnkSeqNoExt is
-      variable v : RelLnkSeqNoExt;
+   function hdrGetAckExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExtType)
+   return RelLnkSeqNoExtType is
+      variable v : RelLnkSeqNoExtType;
    begin
       v := extend(hdrGetAck(x), ref);
       return v;
    end function hdrGetAckExtend;
 
-   function hdrGetReqExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExt)
-   return RelLnkSeqNoExt is
-      variable v : RelLnkSeqNoExt;
+   function hdrGetReqExtend(constant x : std_logic_vector(7 downto 0); constant ref : RelLnkSeqNoExtType)
+   return RelLnkSeqNoExtType is
+      variable v : RelLnkSeqNoExtType;
    begin
       v := extend(hdrGetReq(x), ref);
       return v;
    end function hdrGetReqExtend;
 
-   function hdrGetMsgTyp(constant x : std_logic_vector(7 downto 0))
-   return RelLnkMsgTyp is
+   function hdrGetMsgType(constant x : std_logic_vector(7 downto 0))
+   return RelLnkMsgType is
       variable v : unsigned(x'range);
    begin
       v := shift_right(unsigned(x),  0);
-      return RelLnkMsgTyp(resize(v, RelLnkMsgTyp'length));
-   end function hdrGetMsgTyp;
+      return RelLnkMsgType(resize(v, RelLnkMsgType'length));
+   end function hdrGetMsgType;
 
 end package body RelLnkPkg;

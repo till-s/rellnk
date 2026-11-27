@@ -295,7 +295,7 @@ begin
          datOut          => datOut,
          rdEna           => fifoRdEna,
          rdPtr           => fifoRdPtr,
-	 hlPtr           => fifoRdPtr,
+         hlPtr           => fifoRdPtr,
          empty           => fifoEmpty
       );
 
