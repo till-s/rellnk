@@ -105,6 +105,11 @@ end entity RelLnk;
 
 architecture rtl of RelLnk is
 
+   -- flow-control / busy note: if this feature is implemented then
+   -- the REX queue must periodically traversed resetting expired
+   -- timeouts to the current time - otherwise there might be a roll-over
+   -- at some point!
+
    constant LD_REX_FIFO_DEPTH_C : natural := RelLnkSeqNoType'length;
    constant ALV_TIMEOUT_C       : signed(ALV_TIMEOUT_G'length downto 0) := signed(resize(ALV_TIMEOUT_G, ALV_TIMEOUT_G'length + 1));
 
@@ -553,8 +558,11 @@ begin
                end if;
             end if;
 
-         -- the REX_ABORT state serves the purpose to restore the rexFifo state
-         -- so it can be cleaned of already ACKed messagest sta
+         -- The REX_ABORT state serves the purpose to restore the rexFifo state
+         -- so it can be cleaned of already ACKed messages.
+         -- This state may also be used to 'wipe' the timeouts. If flow-control
+         -- is ever implemented already expired timeouts in the REX queue must
+         -- periodically be updated so that roll-over issues are avoided.
          when REX_ABORT =>
             -- reset the read pointer
             fifoRdUndo <= '1';
